@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+.env
+dashboard.html
+dashboard_push.json
+volume_alert_state.json
+*.log
+.claude/
