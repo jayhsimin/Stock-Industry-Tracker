@@ -246,7 +246,7 @@ python build_dashboard_live.py   # 這會順便產生 dashboard_push.json
 額外安裝套件：
 
 ```bash
-python build_dashboard_live.py --volume-ratio-alert 3.0   # 預設3倍，0=停用
+python build_dashboard_live.py --volume-ratio-alert 3.0 --min-price-alert 100   # 預設3倍/股價>100，量比門檻0=停用
 ```
 
 同一檔股票**一天只會通知一次**（記錄在 `volume_alert_state.json`，跨日自動重置），避免量一直維持在高檔

@@ -49,6 +49,8 @@ def main():
     parser.add_argument("--volume-ratio-alert", type=float, default=3.0,
                          help="toast-alert a stock once its 量比 (volume_ratio) reaches this "
                               "(default 3.0x normal pace); 0 disables alerting")
+    parser.add_argument("--min-price-alert", type=float, default=100.0,
+                         help="only alert stocks trading above this price (default 100.0)")
     args = parser.parse_args()
 
     conn = sqlite3.connect(args.db)
@@ -96,7 +98,9 @@ def main():
     print(f"{len(live)} stocks had a usable live snapshot")
 
     if args.volume_ratio_alert > 0:
-        alerts = volume_alert.check_and_alert(live, names, threshold=args.volume_ratio_alert)
+        alerts = volume_alert.check_and_alert(
+            live, names, threshold=args.volume_ratio_alert, min_price=args.min_price_alert
+        )
         if alerts:
             print(f"volume alert: {len(alerts)} new -> " +
                   ", ".join(f"{name}({code}) {vr:.1f}x" for code, name, vr in alerts))

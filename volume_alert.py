@@ -83,7 +83,7 @@ $Toast = New-Object Windows.UI.Notifications.ToastNotification $XmlDocument
         os.remove(path)
 
 
-def check_and_alert(live, names, threshold=3.0, state_file=STATE_FILE):
+def check_and_alert(live, names, threshold=3.0, min_price=100.0, state_file=STATE_FILE):
     """live: {code: {"close":..., "pct":..., "volume_ratio":...}}.
     Returns the list of (code, name, volume_ratio) newly alerted this run."""
     state = _load_state(state_file)
@@ -93,6 +93,8 @@ def check_and_alert(live, names, threshold=3.0, state_file=STATE_FILE):
     for code, info in live.items():
         vr = info.get("volume_ratio")
         if vr is None or vr < threshold or code in alerted_today:
+            continue
+        if info.get("close") is None or info["close"] <= min_price:
             continue
         name = names.get(code, code)
         send_toast(
