@@ -173,6 +173,20 @@ user's CA certificate or password yourself. `ma_data.py` resamples
 Shioaji's minute-bar `kbars()` to daily closes itself - there is no native
 daily-OHLC mode for stocks in this API.
 
+**`trading/daytrade/` is a second, independent strategy (ORB day-trade) - own config, own
+position pool, own minute-K-driven data layer, but it reuses `trading/executor.py` and
+`trading/positions.py` directly rather than duplicating them.** Because it's meant to
+re-run every 1 minute during the session, every signal input comes from `api.kbars()` for
+TODAY only (`trading/daytrade/minute_data.py`) - opening-range high, minute-level volume
+ratio, cumulative turnover - never from `api.snapshots()`, whose `volume_ratio`/
+`total_amount` are day-over-day figures, not minute-level ones; recomputing fresh from
+today's bars every run also means there's no cross-run state file to maintain for the
+opening range itself (unlike `positions_state.json`, which must persist since positions
+genuinely span runs). `trading/daytrade/backtest.py` replays the exact same
+`minute_data.py`/`signals.py` functions against historical kbars (growing per-minute slice,
+no look-ahead) instead of duplicating the entry/exit logic. See `trading/daytrade/README.md`
+for the full rule set.
+
 **`trading/decisions.json` is the strategy rulebook's single source of truth, rendered by
 the dashboard's 交易決策 tab - not just the swing strategy's.** `{"strategies": {id:
 {name, status, schedule, decided_date}}, "decisions": [{strategy, category, title, rule,

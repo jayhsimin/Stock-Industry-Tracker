@@ -12,3 +12,6 @@ volume_alert_state.json
 .claude/
 trading/positions_state.json
 trading/reports/
+trading/daytrade/positions_state.json
+trading/daytrade/reports/
+trading/daytrade/backtest_result.txt
