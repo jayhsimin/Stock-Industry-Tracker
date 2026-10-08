@@ -155,6 +155,24 @@ is the filter. Shioaji's `scanners(ChangePercentRank)` was tried as an alternati
 rejected — its results skewed toward thin-volume stocks clustered at exactly ±10%, not a
 clean ranking; our own EOD data is more reliable for this.
 
+**`trading/` is a deliberately isolated module - a real (user-specified, not
+Claude-invented) swing strategy with a hard simulation-only gate.** See
+`trading/README.md` for the full rule set; the one fact that must never
+regress: `trading/executor.py`'s order functions only ever reach
+`simulation=False` when BOTH `--live` is passed AND the environment variable
+named in `trading/config.py` (`LIVE_CONFIRM_ENV_VAR`) equals its exact
+confirmation string - never loosen this to a single condition. Trading needs
+the `SHIOAJI_API_KEY_all`/`SHIOAJI_SECRET_KEY_all` key pair (full permission),
+not the data-only pair `realtime_quote.py`/`build_dashboard_live.py` use -
+`place_order` rejects the data-only key with a 401 even in simulation. A
+fresh Shioaji account also needs one-time CA/trading-agreement activation
+(`activate_ca()` or done on the broker's own platform) before any order
+succeeds - a `406 Please sign <account> first` means that step is still
+outstanding on the account, not a code bug; never attempt to handle a
+user's CA certificate or password yourself. `ma_data.py` resamples
+Shioaji's minute-bar `kbars()` to daily closes itself - there is no native
+daily-OHLC mode for stocks in this API.
+
 ## File structure
 
 - `fetch_daily.py` — daily orchestrator; also calls `db.ensure_views()`
@@ -184,6 +202,8 @@ clean ranking; our own EOD data is more reliable for this.
 - `refresh_dashboard.bat` — entry point for the `TWDashboardLiveRefresh` Windows
   scheduled task (every 1 min); cds into the project dir and runs
   `build_dashboard_live.py`
+- `trading/` — isolated swing-trading module (config/signals/positions/executor/
+  daily_scan/intraday_monitor/report); see Architecture above and `trading/README.md`
 - `volume_alert.py` — Windows toast alerts on Shioaji's `volume_ratio` (量比), called from
   `build_dashboard_live.py` every run. Once-per-trading-day per stock
   (`volume_alert_state.json`, gitignored, resets on date change) and the child

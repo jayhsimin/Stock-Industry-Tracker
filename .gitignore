@@ -10,3 +10,5 @@ dashboard_push.json
 volume_alert_state.json
 *.log
 .claude/
+trading/positions_state.json
+trading/reports/
