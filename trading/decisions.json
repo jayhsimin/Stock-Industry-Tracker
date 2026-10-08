@@ -1,0 +1,170 @@
+{
+  "strategies": {
+    "swing": {
+      "name": "題材回檔量增策略（波段）",
+      "status": "active",
+      "schedule": "每天14:30自動掃描新進場訊號（TWTradingDailyScan）+ 每1分鐘監控已持倉停損停利（TWTradingIntradayMonitor）",
+      "decided_date": "2026-10-07"
+    },
+    "daytrade": {
+      "name": "當沖策略",
+      "status": "active",
+      "schedule": "平日09:00-13:05每1分鐘自動執行（TWTradingDaytradeMonitor），進場出場都在同一支程式",
+      "decided_date": "2026-10-08"
+    }
+  },
+  "decisions": [
+    {
+      "strategy": "swing",
+      "category": "entry",
+      "title": "題材一致性",
+      "rule": "該股所屬 concept_map 題材，當日中位數漲跌幅 > 0",
+      "rationale": "題材正在發酵才進場，不是在題材走弱時逆勢單打個股。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "entry",
+      "title": "回檔至支撐",
+      "rule": "收盤價落在 MA5(周線)／MA20(月線)／MA60(季線) 任一條的 ±2% 範圍內",
+      "rationale": "找回檔支撐進場，不是追高；三條均線任一條成立即可（OR，不是三條都要）。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "entry",
+      "title": "量增確認",
+      "rule": "Shioaji 快照 volume_ratio（量比，今天 vs 自己過去5天均量）≥ 1.5倍",
+      "rationale": "確認買盤在支撐附近轉強，不是量縮盤整誤判成回檔。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "entry",
+      "title": "流動性門檻",
+      "rule": "當日累積成交金額（Shioaji 快照 total_amount）≥ NT$1億",
+      "rationale": "量比是相對值，薄盤股在很小的絕對量基礎上也能衝出高倍數；改用成交金額而非張數/股數，因為不同股價區間所需的張數門檻天生不同，金額可以跨股價區間公平比較，也是機構篩股常用的流動性衡量方式。實測：曾經在量比達標但絕對成交金額僅約新台幣130萬元的薄盤股（6216居易）上誤觸發進場，加上此條件後正確排除。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "swing",
+      "category": "exit",
+      "title": "停損",
+      "rule": "未實現報酬 ≤ -5%",
+      "rationale": "四個出場條件任一觸發即出場（OR，不是全部都要）。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "exit",
+      "title": "停利",
+      "rule": "未實現報酬 ≥ +10%",
+      "rationale": "停損:停利 = 1:2，風報比設計。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "exit",
+      "title": "最長持有天數",
+      "rule": "持有超過 5 個交易日（一週）",
+      "rationale": "波段策略設定一週的時間停損，避免無限期持有不表態的部位。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "exit",
+      "title": "題材轉弱",
+      "rule": "該股所屬題材的當日中位數漲跌幅轉負",
+      "rationale": "進場理由（題材發酵）消失就出場，不等停損停利才反應。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "sizing",
+      "title": "整股下單（非零股）",
+      "rule": "每筆固定1張（整股1000股），金額隨股價浮動",
+      "rationale": "零股盤中每3分鐘才批次撮合一次；實測零股買進後馬上要賣會被拒單（集保賣出餘股數不足），停損停利可能滑價/延遲成交。改整股後進出都在正常連續撮合時段。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "sizing",
+      "title": "總持倉成本上限",
+      "rule": "所有持倉中部位的總成本（進場價 × 股數加總）不能超過 NT$600,000",
+      "rationale": "改整股後單筆金額不再是固定值（隨股價浮動），改用總額上限控管整體風險；股價超過NT$600的股票會被同一檢查自動擋掉（1張成本就超過上限）。",
+      "decided_date": "2026-10-07"
+    },
+    {
+      "strategy": "swing",
+      "category": "ranking",
+      "title": "多檔候選時的優先順序",
+      "rule": "加權總分 = 題材強度 50% + 量增幅度 35% + 回檔精準度 15%（各因子在當天候選股之間 min-max 正規化後再加權），分數高者優先買，直到資金上限",
+      "rationale": "原本依股票代號數字順序買，純屬巧合、跟訊號強弱無關；改成排序後，資金不夠全買時優先買訊號最強的候選股，而不是代號最小的。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "entry",
+      "title": "開盤區間突破（ORB）",
+      "rule": "用 Shioaji kbars() 抓當天的1分鐘K線，以09:00開盤後5分鐘內的最高價為「開盤區間」，最新一根分鐘K的收盤價向上突破此區間高點即視為進場訊號。開盤區間在滿5分鐘前視為尚未成形，不判斷突破。",
+      "rationale": "當沖沒有隔夜概念，波段用的MA5/20/60回檔邏輯不適用；ORB是當沖最常見的手法之一，訊號清楚、進場理由明確。因為排程每分鐘重跑一次，直接用當天分鐘K現場重新計算，不用自己維護跨輪詢的開盤區間狀態檔，也不會因為漏了某次輪詢而算錯。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "entry",
+      "title": "量增確認",
+      "rule": "最新一根分鐘K的成交量，相對「當天其他分鐘K的平均量」≥ 2.0倍",
+      "rationale": "比波段的1.5倍門檻更高，當沖持有時間短，需要更強的爆量確認排除雜訊，避免假突破。改用分鐘K自己的量算比值，不用Shioaji快照的volume_ratio（那是跟過去5天的日均量比，是日對日的相對值，不是分鐘級的）。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "entry",
+      "title": "流動性門檻",
+      "rule": "當天所有分鐘K的成交金額(Amount)加總 ≥ NT$1億",
+      "rationale": "沿用波段策略已驗證過的絕對流動性篩選方式（成交金額而非張數，可跨股價區間比較）；當沖更需要能即時進出的流動性，否則滑價風險比波段更高。改用分鐘K的Amount欄位加總取代Shioaji快照的total_amount，資料來源統一都是分鐘K。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "entry",
+      "title": "強制平倉時間後禁止新進場",
+      "rule": "最新分鐘K的時間 ≥ 13:00（強制平倉時間）就不再開新倉，即使ORB突破訊號成立",
+      "rationale": "在快要強制平倉前開新倉沒有意義——下一分鐘就會被強制平倉規則抓到賣掉，白白付一次買賣的價差成本。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "exit",
+      "title": "停損",
+      "rule": "未實現報酬 ≤ -2%",
+      "rationale": "比波段的-5%緊很多，當沖持有時間以分鐘/小時計，不能忍受波段級的回撤。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "exit",
+      "title": "停利",
+      "rule": "未實現報酬 ≥ +3%",
+      "rationale": "停損:停利 = 1:1.5，當沖頻率高、單筆期望值不需要像波段一樣追求大波段漲幅。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "exit",
+      "title": "強制平倉",
+      "rule": "13:00 前不論損益一律平倉，不留倉過夜",
+      "rationale": "當沖的核心風控：當天沖掉，不能留倉。13:00（收盤前30分鐘）留緩衝時間，避免尾盤量能不足、委託掛不到成交。",
+      "decided_date": "2026-10-08"
+    },
+    {
+      "strategy": "daytrade",
+      "category": "sizing",
+      "title": "帳戶前置條件",
+      "rule": "下單帳戶需先向永豐金申請並開通「現股當沖」交易權限（跟一般現股買賣是分開的權限，需券商審核）",
+      "rationale": "跟當初CA憑證簽署一樣，這是帳戶層級的一次性設定，不是程式碼問題；沒開通的話當天買進無法在同一天賣出（會被視為一般現股交易，次日才能賣）。需使用者自行向永豐金申請，Claude不會代為處理。",
+      "decided_date": "2026-10-08"
+    }
+  ]
+}

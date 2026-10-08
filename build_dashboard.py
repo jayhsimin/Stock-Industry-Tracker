@@ -12,10 +12,21 @@ Usage:
 """
 import argparse
 import json
+import os
 import sqlite3
 import statistics
 
 import db
+
+DECISIONS_PATH = os.path.join("trading", "decisions.json")
+
+
+def load_decisions(path=DECISIONS_PATH):
+    """See build_dashboard_live.py's load_decisions - same file, same shape."""
+    if not os.path.exists(path):
+        return {"strategies": {}, "decisions": []}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 PCT = (
     'CAST(NULLIF(sp."Change", \'\') AS REAL) * 100.0 / '
@@ -74,7 +85,7 @@ def build_data(conn, iso_date):
             "stocks": [{"code": r[0], "name": r[1], "close": r[2], "pct": r[3]} for r in rows],
         }
 
-    return {"date": iso_date, "industries": industries, "concepts": concepts}
+    return {"date": iso_date, "industries": industries, "concepts": concepts, "decisions": load_decisions()}
 
 
 def main():

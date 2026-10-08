@@ -173,6 +173,18 @@ user's CA certificate or password yourself. `ma_data.py` resamples
 Shioaji's minute-bar `kbars()` to daily closes itself - there is no native
 daily-OHLC mode for stocks in this API.
 
+**`trading/decisions.json` is the strategy rulebook's single source of truth, rendered by
+the dashboard's 交易決策 tab - not just the swing strategy's.** `{"strategies": {id:
+{name, status, schedule, decided_date}}, "decisions": [{strategy, category, title, rule,
+rationale, decided_date}]}`; `category` is one of `entry`/`exit`/`sizing`/`ranking`. Both
+`build_dashboard.py` and `build_dashboard_live.py` load it via their own `load_decisions()`
+and embed it as `data["decisions"]` alongside the bubble-chart data; `dashboard.html.
+template`'s JS renders it read-only (no write-back to the file from the browser). Any new
+trading-strategy decision (a new condition, a changed threshold, a new strategy like the
+`daytrade` one) should be appended here, not just left in conversation history or
+`trading/README.md` prose - this file is what makes past decisions (and why they were made)
+visible on the dashboard instead of needing to be re-derived from chat/git history.
+
 ## File structure
 
 - `fetch_daily.py` — daily orchestrator; also calls `db.ensure_views()`
@@ -193,8 +205,8 @@ daily-OHLC mode for stocks in this API.
 - `market_movers.py` — whole-market %change ranking from twstock.db (not limited to
   concept_map's tracked stocks) with industry/concept classification, plus a day-over-day
   industry-representation trend view
-- `dashboard.html.template` — bubble-chart dashboard shell; `__DATA_JSON__` is the data
-  injection point, never edit the built `dashboard.html` directly
+- `dashboard.html.template` — bubble-chart dashboard shell + 交易決策 (decisions log) tab;
+  `__DATA_JSON__` is the data injection point, never edit the built `dashboard.html` directly
 - `build_dashboard.py` / `build_dashboard_live.py` — fill the template from twstock.db
   (EOD) or Shioaji (intraday) respectively, both producing `dashboard.html` (gitignored
   build output). `build_dashboard_live.py` also writes `dashboard_push.json` (gitignored)

@@ -23,6 +23,17 @@ import utils
 import volume_alert
 
 CHUNK = 400
+DECISIONS_PATH = os.path.join("trading", "decisions.json")
+
+
+def load_decisions(path=DECISIONS_PATH):
+    """{"strategies": {...}, "decisions": [...]} - the trading/ module's
+    strategy rulebook, rendered as the dashboard's 交易決策 tab. Missing
+    file -> empty (so the dashboard still builds before any strategy exists)."""
+    if not os.path.exists(path):
+        return {"strategies": {}, "decisions": []}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def group_membership(conn):
@@ -125,6 +136,7 @@ def main():
         "date": datetime.now().strftime("%Y-%m-%d %H:%M") + " 盤中即時更新",
         "industries": build_groups(industries),
         "concepts": build_groups(concepts),
+        "decisions": load_decisions(),
     }
     conn.close()
 

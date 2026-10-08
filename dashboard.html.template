@@ -329,9 +329,140 @@
 
   .empty-note { color: var(--text-muted); font-size: 0.85rem; padding: 40px 20px; text-align: center; }
 
+  .page-nav {
+    display: inline-flex;
+    background: var(--surface-2);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+    margin-bottom: 20px;
+  }
+  .page-nav button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 8px 20px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .page-nav button[aria-pressed="true"] {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .strategy-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-m);
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .strategy-card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-bottom: 4px;
+  }
+  .strategy-card-head h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-family: "Noto Sans TC", sans-serif;
+  }
+  .status-pill {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+  .status-pill.active { background: var(--down-weak); color: var(--down); }
+  .status-pill.draft { background: var(--accent-weak); color: var(--accent); }
+  .strategy-schedule {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .decision-group + .decision-group { margin-top: 14px; }
+  .decision-group-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .decision-item {
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+  .decision-group .decision-item:first-of-type { border-top: none; padding-top: 0; }
+  .decision-item-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .decision-item-head .title { font-weight: 600; font-size: 0.92rem; }
+  .decision-item-head .date {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    flex: none;
+  }
+  .decision-rule {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-top: 3px;
+    line-height: 1.5;
+  }
+  .decision-rationale {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.55;
+  }
+
+  .history-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-m);
+    padding: 18px 20px;
+  }
+  .history-card h3 { margin: 0 0 12px; font-size: 1rem; font-family: "Noto Sans TC", sans-serif; }
+  .history-row {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.84rem;
+    align-items: baseline;
+  }
+  .history-row:first-of-type { border-top: none; }
+  .history-row .date { font-family: "IBM Plex Mono", monospace; color: var(--text-muted); flex: none; width: 88px; }
+  .history-row .strategy-tag {
+    flex: none;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+  }
+  .history-row .what { color: var(--text-primary); }
+
   @media (max-width: 640px) {
     .kpi-row { grid-template-columns: repeat(2, 1fr); }
     #bubble-svg { height: 460px; }
+    .history-row { flex-wrap: wrap; }
+    .history-row .date { width: auto; }
   }
 </style>
 
@@ -346,28 +477,43 @@
     <span id="reload-countdown"></span>秒後自動重整頁面（讀取本機最新資料）
   </div>
 
-  <div class="toolbar">
-    <div class="segmented" role="tablist" aria-label="分類方式">
-      <button type="button" role="tab" aria-pressed="true" data-mode="concepts">自建題材</button>
-      <button type="button" role="tab" aria-pressed="false" data-mode="industries">官方產業</button>
-    </div>
-    <button type="button" class="view-toggle" id="toggle-table">改用表格檢視</button>
+  <div class="page-nav" role="tablist" aria-label="頁面">
+    <button type="button" role="tab" aria-pressed="true" data-page="radar">題材雷達</button>
+    <button type="button" role="tab" aria-pressed="false" data-page="decisions">交易決策</button>
   </div>
 
-  <div class="kpi-row" id="kpi-row"></div>
-
-  <div class="chart-card">
-    <div class="chart-caption">
-      <h2 id="chart-title">自建題材 · 依中位數漲跌幅排序，泡泡大小 = 漲跌幅度</h2>
-      <div class="legend">
-        <span><i class="up"></i>上漲</span>
-        <span><i class="down"></i>下跌</span>
+  <div id="view-radar">
+    <div class="toolbar">
+      <div class="segmented" role="tablist" aria-label="分類方式">
+        <button type="button" role="tab" aria-pressed="true" data-mode="concepts">自建題材</button>
+        <button type="button" role="tab" aria-pressed="false" data-mode="industries">官方產業</button>
       </div>
+      <button type="button" class="view-toggle" id="toggle-table">改用表格檢視</button>
     </div>
-    <p class="chart-note">泡泡大小 = 中位數漲跌幅度（不受單一個股極端值拉動）；泡泡外環 = 成分股漲/跌家數比例——
-      環越單一顏色代表整個族群同向移動，環被分成兩色代表只有部分個股在動，跟中位數不一致時要特別留意。</p>
-    <svg id="bubble-svg" role="img" aria-label="題材漲跌幅泡泡圖"></svg>
-    <div id="table-view" class="table-wrap" style="display:none"></div>
+
+    <div class="kpi-row" id="kpi-row"></div>
+
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2 id="chart-title">自建題材 · 依中位數漲跌幅排序，泡泡大小 = 漲跌幅度</h2>
+        <div class="legend">
+          <span><i class="up"></i>上漲</span>
+          <span><i class="down"></i>下跌</span>
+        </div>
+      </div>
+      <p class="chart-note">泡泡大小 = 中位數漲跌幅度（不受單一個股極端值拉動）；泡泡外環 = 成分股漲/跌家數比例——
+        環越單一顏色代表整個族群同向移動，環被分成兩色代表只有部分個股在動，跟中位數不一致時要特別留意。</p>
+      <svg id="bubble-svg" role="img" aria-label="題材漲跌幅泡泡圖"></svg>
+      <div id="table-view" class="table-wrap" style="display:none"></div>
+    </div>
+  </div>
+
+  <div id="view-decisions" style="display:none">
+    <div id="strategy-cards"></div>
+    <div class="history-card">
+      <h3>決策歷史</h3>
+      <div id="history-list"></div>
+    </div>
   </div>
 </div>
 
@@ -677,6 +823,120 @@
 
   render();
 
+  // --- 交易決策 tab: static rulebook rendered from trading/decisions.json
+  // (embedded as DATA.decisions by build_dashboard.py / build_dashboard_live.py).
+  // Purely a read-only view of what's already decided - no editing here.
+  var GROUP_LABELS = { entry: "進場條件", exit: "出場條件", sizing: "資金／下單", ranking: "排序規則" };
+  var GROUP_ORDER = ["entry", "exit", "sizing", "ranking"];
+  var STRATEGY_ORDER = ["swing", "daytrade"];
+  var STATUS_LABELS = { active: "啟用中", draft: "草案" };
+
+  function renderDecisions() {
+    var dec = DATA.decisions || { strategies: {}, decisions: [] };
+    var byStrategy = {};
+    (dec.decisions || []).forEach(function (d) {
+      (byStrategy[d.strategy] = byStrategy[d.strategy] || []).push(d);
+    });
+
+    var cardsEl = document.getElementById("strategy-cards");
+    cardsEl.innerHTML = "";
+    var order = STRATEGY_ORDER.filter(function (id) { return dec.strategies[id]; })
+      .concat(Object.keys(dec.strategies).filter(function (id) { return STRATEGY_ORDER.indexOf(id) === -1; }));
+
+    if (!order.length) {
+      cardsEl.innerHTML = '<div class="empty-note">尚無已記錄的策略決策。</div>';
+    }
+
+    order.forEach(function (sid) {
+      var meta = dec.strategies[sid];
+      var items = byStrategy[sid] || [];
+      var byGroup = {};
+      items.forEach(function (d) { (byGroup[d.category] = byGroup[d.category] || []).push(d); });
+
+      var card = document.createElement("div");
+      card.className = "strategy-card";
+      var head = document.createElement("div");
+      head.className = "strategy-card-head";
+      head.innerHTML =
+        '<h3></h3><span class="status-pill"></span>';
+      head.querySelector("h3").textContent = meta.name;
+      var pill = head.querySelector(".status-pill");
+      pill.classList.add(meta.status === "active" ? "active" : "draft");
+      pill.textContent = STATUS_LABELS[meta.status] || meta.status;
+      card.appendChild(head);
+
+      var sched = document.createElement("div");
+      sched.className = "strategy-schedule";
+      sched.textContent = meta.schedule || "";
+      card.appendChild(sched);
+
+      GROUP_ORDER.filter(function (g) { return byGroup[g] && byGroup[g].length; }).forEach(function (g) {
+        var group = document.createElement("div");
+        group.className = "decision-group";
+        var title = document.createElement("div");
+        title.className = "decision-group-title";
+        title.textContent = GROUP_LABELS[g] || g;
+        group.appendChild(title);
+
+        byGroup[g].forEach(function (d) {
+          var item = document.createElement("div");
+          item.className = "decision-item";
+          item.innerHTML =
+            '<div class="decision-item-head"><span class="title"></span><span class="date"></span></div>' +
+            '<div class="decision-rule"></div><div class="decision-rationale"></div>';
+          item.querySelector(".title").textContent = d.title;
+          item.querySelector(".date").textContent = d.decided_date;
+          item.querySelector(".decision-rule").textContent = d.rule;
+          item.querySelector(".decision-rationale").textContent = d.rationale;
+          group.appendChild(item);
+        });
+        card.appendChild(group);
+      });
+
+      if (!items.length) {
+        var empty = document.createElement("div");
+        empty.className = "empty-note";
+        empty.style.padding = "8px 0";
+        empty.textContent = "尚無細項規則。";
+        card.appendChild(empty);
+      }
+
+      cardsEl.appendChild(card);
+    });
+
+    var historyEl = document.getElementById("history-list");
+    historyEl.innerHTML = "";
+    var allSorted = (dec.decisions || []).slice().sort(function (a, b) {
+      return b.decided_date.localeCompare(a.decided_date);
+    });
+    if (!allSorted.length) {
+      historyEl.innerHTML = '<div class="empty-note">尚無決策歷史。</div>';
+    }
+    allSorted.forEach(function (d) {
+      var row = document.createElement("div");
+      row.className = "history-row";
+      row.innerHTML =
+        '<span class="date"></span><span class="strategy-tag"></span><span class="what"></span>';
+      row.querySelector(".date").textContent = d.decided_date;
+      row.querySelector(".strategy-tag").textContent = (dec.strategies[d.strategy] || {}).name || d.strategy;
+      row.querySelector(".what").textContent =
+        (GROUP_LABELS[d.category] || d.category) + "：" + d.title + " — " + d.rule;
+      historyEl.appendChild(row);
+    });
+  }
+  renderDecisions();
+
+  document.querySelectorAll(".page-nav button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".page-nav button").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      btn.setAttribute("aria-pressed", "true");
+      var page = btn.getAttribute("data-page");
+      document.getElementById("view-radar").style.display = page === "radar" ? "" : "none";
+      document.getElementById("view-decisions").style.display = page === "decisions" ? "" : "none";
+      if (page === "radar" && !tableMode) render();
+    });
+  });
+
   // Live updates: if this artifact has the `db` capability, subscribe to
   // dashboard/latest and re-render whenever Claude pushes a fresh snapshot -
   // no page reload needed. Falls back silently to the static embedded data
@@ -700,6 +960,7 @@
         document.getElementById("as-of").textContent = "資料時間：" + DATA.date;
         document.getElementById("live-badge").style.display = "inline-flex";
         render();
+        renderDecisions();
         clearReloadCountdown();
       },
       function (err) {
