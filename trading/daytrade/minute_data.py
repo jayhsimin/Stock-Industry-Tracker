@@ -40,11 +40,11 @@ def today_bars(api, contract):
     return bars_for_range(api, contract, today, today)
 
 
-def opening_range_high(bars, window_minutes):
-    """Max High across the first `window_minutes` of today's bars. Returns
-    None until today's bars span MORE than the window - i.e. the opening
-    range isn't finalized yet, so there's nothing to break out of (this is
-    the only guard needed against trading during the OR window itself)."""
+def _opening_range_window(bars, window_minutes):
+    """The first `window_minutes` of today's bars, or None until today's
+    bars span MORE than the window - i.e. the opening range isn't
+    finalized yet (this is the only guard needed against trading during
+    the OR window itself)."""
     if bars.empty:
         return None
     first_ts = bars.index[0]
@@ -52,7 +52,32 @@ def opening_range_high(bars, window_minutes):
     if bars.index[-1] < cutoff:
         return None
     window = bars[bars.index < cutoff]
-    return float(window["High"].max()) if not window.empty else None
+    return window if not window.empty else None
+
+
+def opening_range_high(bars, window_minutes):
+    """Max High across the opening range window. None if not finalized yet."""
+    window = _opening_range_window(bars, window_minutes)
+    return float(window["High"].max()) if window is not None else None
+
+
+def opening_range_low(bars, window_minutes):
+    """Min Low across the opening range window. None if not finalized yet."""
+    window = _opening_range_window(bars, window_minutes)
+    return float(window["Low"].min()) if window is not None else None
+
+
+def opening_range_pct(bars, window_minutes):
+    """(high - low) / low across the opening range window - how much the
+    stock actually moved in the first window_minutes, independent of
+    direction. Used as a quality filter: a breakout above a dead-flat
+    opening range has nothing behind it. None if not finalized yet."""
+    window = _opening_range_window(bars, window_minutes)
+    if window is None:
+        return None
+    low = float(window["Low"].min())
+    high = float(window["High"].max())
+    return (high - low) / low if low else None
 
 
 def latest_close(bars):
