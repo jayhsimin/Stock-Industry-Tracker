@@ -9,18 +9,24 @@ turning negative.
 """
 
 # --- Position sizing ---------------------------------------------------
-# Trying full lots (整股, 1張=1000股) first instead of odd-lot (零股):
-# full lots trade in the regular continuous matching session, so stop-loss/
-# take-profit fill promptly - odd-lot's ~3-minute batched matching (see git
-# history) made stop-loss slippage a real risk. The trade-off: position
-# size is no longer a precise NTD amount, it's whatever 1000 shares costs
-# at entry price - a NT$30 stock costs NT$30,000/lot, a NT$300 stock costs
-# NT$300,000/lot. MAX_TOTAL_POSITION_COST_NTD is the guardrail that keeps
-# this from running away: a candidate is skipped (not bought) if adding it
-# would push total open-position cost over the cap, which also means a
-# single stock priced above the cap can never be bought at all.
+# 2026-10: reverted to allowing odd-lot (零股) orders, user-specified. A full
+# lot (ORDER_LOT_SHARES) is still bought when the remaining budget covers
+# it - full lots trade in the regular continuous matching session, so a
+# stop-loss/take-profit on a full-lot position still fills promptly, unlike
+# odd-lot's ~3-minute batched matching (the reason this was full-lot-only
+# before). But when the remaining budget can't cover a full lot,
+# executor.shares_to_buy() now buys whatever odd-lot quantity (1-999 shares)
+# it CAN afford instead of skipping the candidate outright - user-specified:
+# no stock should be excluded just because of its share price, since an
+# odd-lot order can always size down to fit whatever budget is left.
+# executor.buy()/sell() pick StockOrderLot.Common vs IntradayOdd automatically
+# from the share count, so callers never need to choose explicitly.
 ORDER_LOT_SHARES = 1_000               # 1 張 (board lot)
-MAX_TOTAL_POSITION_COST_NTD = 600_000  # sum of entry_price * shares across ALL open positions
+MAX_TOTAL_POSITION_COST_NTD = 200_000  # sum of entry_price * shares across ALL open positions
+MIN_ODD_LOT_VALUE_NTD = 10_000  # an odd-lot buy only happens if the remaining budget covers at
+# least this much NTD of the stock - user-specified: a candidate should still be skipped (not
+# bought as some negligible 1-2 share sliver) if there isn't enough budget left for a real
+# position, even though odd-lot orders technically accept any 1-999 share quantity.
 
 # --- Exit rules ----------------------------------------------------------
 STOP_LOSS_PCT = -0.05       # exit if unrealized return <= this

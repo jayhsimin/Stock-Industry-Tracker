@@ -15,8 +15,10 @@ def build(run_date, new_signals, open_status, exits_today, budget_skipped=None):
     """new_signals: list of (code, name, conditions_dict) that passed check_entry.
     open_status: list of (code, name, entry_price, current_price, days_held, exit_conditions_dict).
     exits_today: list of trading.positions.close_position() return records.
-    budget_skipped: list of (code, name, lot_cost) that passed check_entry but
-    were skipped because buying them would exceed config.MAX_TOTAL_POSITION_COST_NTD."""
+    budget_skipped: list of (code, name, close_price, score) that passed check_entry
+    but got 0 shares from executor.shares_to_buy() - the remaining budget couldn't
+    cover even 1 odd-lot share at that price (budget fully committed elsewhere,
+    not a price ceiling - see config.py)."""
     budget_skipped = budget_skipped or []
     lines = [f"=== 題材回檔量增策略 - {run_date} 收盤後報告 ===", ""]
 
@@ -29,8 +31,8 @@ def build(run_date, new_signals, open_status, exits_today, budget_skipped=None):
     if budget_skipped:
         lines.append("")
         lines.append(f"-- 訊號成立但資金上限已滿，跳過 ({len(budget_skipped)}) --")
-        for code, name, cost, score in budget_skipped:
-            lines.append(f"{code} {name}｜1張成本約 NT${cost:,.0f}｜排序分數 {score:.2f}")
+        for code, name, close_price, score in budget_skipped:
+            lines.append(f"{code} {name}｜股價 NT${close_price:,.2f}｜剩餘預算不足買進1股｜排序分數 {score:.2f}")
 
     lines.append("")
     lines.append(f"-- 持倉狀態 ({len(open_status)}) --")
@@ -55,7 +57,7 @@ def build(run_date, new_signals, open_status, exits_today, budget_skipped=None):
         )
 
     lines.append("")
-    lines.append("※ 全部為模擬單（整股），非真實交易。")
+    lines.append("※ 全部為模擬單（整股或零股），非真實交易。")
     return "\n".join(lines)
 
 

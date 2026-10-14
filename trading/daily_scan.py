@@ -102,8 +102,15 @@ def main():
                 continue
             current_price = live_quotes[code]["close"]
             held = positions.days_held(pos["entry_date"])
-            theme_pct = theme_pct_for_stock(code, code_concepts, concept_median, mode="min")
-            exit_cond = signals.check_exit(pos["entry_price"], current_price, held, theme_pct)
+            # theme_weakened retired 2026-10: a 182-stock/6-month backtest of
+            # the production rule (trading/swing_backtest.py) showed it fired
+            # on 81% of exits at an avg -0.81% (avg hold only 2.1 days), while
+            # removing it raised total P&L from +NT$62,919 to +NT$90,100 and
+            # win rate from 35.9% to 47.4% - the daily concept-median is too
+            # noisy at 1-day granularity to be a useful exit signal. Passed
+            # as None, same idiom intraday_monitor.py already uses to skip it
+            # intraday - see trading/decisions.json.
+            exit_cond = signals.check_exit(pos["entry_price"], current_price, held, theme_median_pct=None)
             open_status.append((code, pos["name"], pos["entry_price"], current_price, held, exit_cond))
             if exit_cond["exit_signal"]:
                 contract = contracts.get(code)
@@ -151,11 +158,12 @@ def main():
         for c in signals.rank_candidates(candidates):
             code, name, cond = c["code"], c["name"], c["cond"]
             cond["score"] = c["score"]
-            shares = executor.lot_shares()
-            cost = executor.lot_cost(c["close"])
-            if running_cost + cost > config.MAX_TOTAL_POSITION_COST_NTD:
-                budget_skipped.append((code, name, cost, c["score"]))
+            remaining_budget = config.MAX_TOTAL_POSITION_COST_NTD - running_cost
+            shares = executor.shares_to_buy(c["close"], remaining_budget)
+            if shares < 1:
+                budget_skipped.append((code, name, c["close"], c["score"]))
                 continue
+            cost = c["close"] * shares
 
             executor.buy(api, contracts[code], c["close"], shares)
             positions.open_position(code, name, c["close"], shares)
