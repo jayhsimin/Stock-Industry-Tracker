@@ -184,8 +184,48 @@ today's bars every run also means there's no cross-run state file to maintain fo
 opening range itself (unlike `positions_state.json`, which must persist since positions
 genuinely span runs). `trading/daytrade/backtest.py` replays the exact same
 `minute_data.py`/`signals.py` functions against historical kbars (growing per-minute slice,
-no look-ahead) instead of duplicating the entry/exit logic. See `trading/daytrade/README.md`
-for the full rule set.
+no look-ahead) instead of duplicating the entry/exit logic. Candidates come from
+`trading/daytrade/watchlist.py` - the whole market's (not `concept_map`'s) prior-day
+liquidity+volatility, scored and cached once pre-market by `build_watchlist.py` (scanning
+~2000 stocks takes ~10-12 min, far too slow for the 1-minute `daytrade_monitor.py` cadence)
+- a 2026-10 backtest traced most losing trades back to thin, low-volatility `concept_map`
+stocks that cleared the ORB conditions on noise, which is why the universe isn't
+`concept_map` here like the swing strategy. `backtest.py` rebuilds each simulated day's
+watchlist from only STRICTLY EARLIER bars (no look-ahead at the stock-selection level,
+not just the minute-by-minute replay level). See `trading/daytrade/README.md` for the
+full rule set.
+
+**Day-trade supports both long and short (`--signal reversal_both`) via 資券當沖, not just
+long.** `trading/executor.py`'s `short_sell()`/`cover_buy()` open with `StockOrderCond.
+ShortSelling` and close with `StockOrderCond.MarginTrading` - the user-specified mechanism
+(open via 融券, close via 融資), not something to "simplify" back to plain Cash orders.
+`trading/positions.py`'s `open_position()`/`close_position()` and `trading/daytrade/
+signals.py`'s `check_exit()` both take a `side` ("long"/"short") that flips which price
+direction is a win - never assume `unrealized_return`/`realized_return` means "price went
+up" without checking `side` first. A short needs a separate 信用交易帳戶 (margin account)
+from 現股當沖's - another broker-side approval this code can't satisfy. `trading/daytrade/
+patterns.py`'s `is_shooting_star()`/`is_bearish_engulfing()` are the bearish mirrors of the
+long-side hammer/engulfing patterns.
+
+**`trading/daytrade/news_api.py` is the programmatic (API-based) news-selection track**,
+confirmed against cnyes (鉅亨網)'s free, keyless `tw_stock_news` category endpoint - it
+genuinely supports historical `startAt`/`endAt` date-range queries and per-article stock-
+code tags (unlike TWSE's own `/opendata/t187ap04_L` material-announcements endpoint, which
+only ever returns the current day's batch, no date param - confirmed by direct testing,
+2026-10). Ranks candidates by raw mention-count in the window, which skews toward mega-caps
+(2330 etc.) that get name-dropped in nearly every market-commentary piece regardless of a
+real same-day catalyst - a known bias, not yet corrected. `news_watchlist.py` is the parallel
+manual-WebSearch track (today, a Claude-session-driven step); both write the same cache
+shape so `daytrade_monitor.py --source news` doesn't care which track populated it.
+
+**`--source ai_chain` (`trading/daytrade/ai_chain_watchlist.py`) trades at most ONE stock
+per day, not a list.** Pipeline: `concept_map`'s `AI伺服器` members (9 stocks, not expanded
+to adjacent AI-chain themes like ABF/PCB/封測) -> filter to yesterday's trading value >=
+`config.AI_CHAIN_MIN_VOLUME_NTD` -> among survivors, whichever has the most cnyes
+`tw_stock_news` mentions in `news_api.trading_day_window()` wins; falls back to highest
+volume if nothing shows up in the news at all. Cheap enough (9 stocks + 1 news call) that
+`daytrade_monitor.py` computes it inline on a cache miss rather than needing a separate
+pre-market script like `build_watchlist.py`.
 
 **`trading/decisions.json` is the strategy rulebook's single source of truth, rendered by
 the dashboard's 交易決策 tab - not just the swing strategy's.** `{"strategies": {id:
@@ -219,12 +259,20 @@ visible on the dashboard instead of needing to be re-derived from chat/git histo
 - `market_movers.py` — whole-market %change ranking from twstock.db (not limited to
   concept_map's tracked stocks) with industry/concept classification, plus a day-over-day
   industry-representation trend view
-- `dashboard.html.template` — bubble-chart dashboard shell + 交易決策 (decisions log) tab;
-  `__DATA_JSON__` is the data injection point, never edit the built `dashboard.html` directly
+- `dashboard.html.template` — bubble-chart dashboard shell + 交易決策 (decisions log) +
+  均線總覽 (MA5/10/20 table) tabs; `__DATA_JSON__` is the data injection point, never edit
+  the built `dashboard.html` directly
 - `build_dashboard.py` / `build_dashboard_live.py` — fill the template from twstock.db
   (EOD) or Shioaji (intraday) respectively, both producing `dashboard.html` (gitignored
   build output). `build_dashboard_live.py` also writes `dashboard_push.json` (gitignored)
   - the raw data dict, for the Artifact `db`-push path (see below).
+- `build_ma_cache.py` — pre-computes MA5/10/20 for every `concept_map` stock into
+  `ma_cache.json` (gitignored), for the 均線總覽 tab. Runs on its own, slower, once-a-day
+  schedule (not every dashboard refresh) because MA needs Shioaji's per-stock `kbars()` -
+  not batchable like `snapshots()` - which takes a few minutes across ~180 stocks, far too
+  slow for the live dashboard's 1-minute cadence. `build_dashboard_live.py` just reads
+  whatever's in the cache and overlays the current run's live price; `build_dashboard.py`
+  (EOD, no live price available) always ships an empty 均線總覽 table.
 - `refresh_dashboard.bat` — entry point for the `TWDashboardLiveRefresh` Windows
   scheduled task (every 1 min); cds into the project dir and runs
   `build_dashboard_live.py`
