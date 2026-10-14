@@ -20,6 +20,9 @@
     --up-weak: #fbe6e5;
     --down: #008300;
     --down-weak: #e2f1e2;
+    --ma5: 76, 124, 246;
+    --ma10: 139, 92, 246;
+    --ma20: 230, 140, 30;
     --radius-s: 8px;
     --radius-m: 14px;
     font-size: 16px;
@@ -40,6 +43,9 @@
       --up-weak: #391c1c;
       --down: #008300;
       --down-weak: #152a17;
+      --ma5: 108, 147, 255;
+      --ma10: 167, 139, 250;
+      --ma20: 244, 184, 96;
     }
   }
   :root[data-theme="dark"] {
@@ -57,6 +63,9 @@
     --up-weak: #391c1c;
     --down: #008300;
     --down-weak: #152a17;
+    --ma5: 108, 147, 255;
+    --ma10: 167, 139, 250;
+    --ma20: 244, 184, 96;
   }
 
   * { box-sizing: border-box; }
@@ -267,6 +276,18 @@
   td.code { font-family: "IBM Plex Mono", monospace; color: var(--text-muted); }
 
   .table-wrap { padding: 4px 10px 14px; overflow-x: auto; }
+
+  .ma-legend { display: flex; gap: 18px; align-items: center; margin: 2px 0 14px; flex-wrap: wrap; }
+  .ma-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-secondary); }
+  .ma-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .ma-legend i.ma5 { background: rgb(var(--ma5)); }
+  .ma-legend i.ma10 { background: rgb(var(--ma10)); }
+  .ma-legend i.ma20 { background: rgb(var(--ma20)); }
+  .ma-note { color: var(--text-muted); font-size: 0.82rem; margin: 0 0 14px; max-width: 760px; }
+  td.ma-close { font-weight: 600; }
+  td.ma-cell-5 { background: rgba(var(--ma5), 0.42); }
+  td.ma-cell-10 { background: rgba(var(--ma10), 0.42); }
+  td.ma-cell-20 { background: rgba(var(--ma20), 0.42); }
 
   .tooltip {
     position: fixed;
@@ -480,6 +501,7 @@
   <div class="page-nav" role="tablist" aria-label="頁面">
     <button type="button" role="tab" aria-pressed="true" data-page="radar">題材雷達</button>
     <button type="button" role="tab" aria-pressed="false" data-page="decisions">交易決策</button>
+    <button type="button" role="tab" aria-pressed="false" data-page="ma">均線總覽</button>
   </div>
 
   <div id="view-radar">
@@ -513,6 +535,23 @@
     <div class="history-card">
       <h3>決策歷史</h3>
       <div id="history-list"></div>
+    </div>
+  </div>
+
+  <div id="view-ma" style="display:none">
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2>題材股均線總覽 · 依個股名稱排序</h2>
+      </div>
+      <p class="ma-note">MA5/MA10/MA20 一天只重新計算一次（Shioaji歷史K棒需逐檔抓取，速度跟盤中即時報價不同步），
+        現價則跟題材雷達一樣每次刷新都更新。現價格的底色是跟MA5/MA10/MA20三個顏色的混合——現價離哪條均線的
+        百分比距離最近，底色就偏向那條均線的顏色，可以快速看出現在比較貼近短中長哪一條均線。</p>
+      <div class="ma-legend">
+        <span><i class="ma5"></i>MA5（週線）</span>
+        <span><i class="ma10"></i>MA10（兩週線）</span>
+        <span><i class="ma20"></i>MA20（月線）</span>
+      </div>
+      <div id="ma-table-view" class="table-wrap"></div>
     </div>
   </div>
 </div>
@@ -926,6 +965,59 @@
   }
   renderDecisions();
 
+  // --- 均線總覽 tab: MA5/10/20 come from build_ma_cache.py's once-a-day
+  // cache (embedded as DATA.ma_table by build_dashboard.py / build_dashboard_
+  // live.py); close is this run's live snapshot price. The 現價 cell's
+  // background blends the three MA anchor colors, weighted by inverse
+  // %-distance from close to each MA - closer to one MA's value pulls the
+  // color toward that MA's own color.
+  function maRgb(name) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue("--" + name).trim();
+    return v.split(",").map(function (x) { return parseFloat(x); });
+  }
+
+  function blendCloseColor(close, ma5, ma10, ma20) {
+    var anchors = [["ma5", ma5], ["ma10", ma10], ["ma20", ma20]];
+    var eps = 1e-6;
+    var weights = anchors.map(function (a) {
+      var dist = Math.abs(close - a[1]) / a[1];
+      return 1 / (dist + eps);
+    });
+    var sum = weights.reduce(function (s, w) { return s + w; }, 0);
+    var rgb = [0, 0, 0];
+    anchors.forEach(function (a, i) {
+      var c = maRgb(a[0]);
+      var w = weights[i] / sum;
+      rgb[0] += c[0] * w; rgb[1] += c[1] * w; rgb[2] += c[2] * w;
+    });
+    return "rgba(" + rgb.map(Math.round).join(",") + ",0.42)";
+  }
+
+  function renderMaTable() {
+    var ma = DATA.ma_table || { date: null, rows: [] };
+    var el = document.getElementById("ma-table-view");
+    if (!ma.rows.length) {
+      el.innerHTML = '<div class="empty-note">尚無均線資料 - 請先執行 <code>python build_ma_cache.py</code>'
+        + '（每天跑一次即可），並確認是用 build_dashboard_live.py 建置（EOD版沒有即時現價可比對）。</div>';
+      return;
+    }
+    var rows = ma.rows.slice().sort(function (a, b) { return a.name.localeCompare(b.name, "zh-Hant"); });
+    var html = '<table class="movers"><thead><tr>'
+      + '<th>個股名稱</th><th>代號</th><th class="num">MA5</th><th class="num">MA10</th>'
+      + '<th class="num">MA20</th><th class="num">現價</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var bg = blendCloseColor(r.close, r.ma5, r.ma10, r.ma20);
+      html += "<tr><td>" + r.name + '</td><td class="code">' + r.code + '</td>'
+        + '<td class="num ma-cell-5">' + r.ma5.toFixed(2) + '</td>'
+        + '<td class="num ma-cell-10">' + r.ma10.toFixed(2) + '</td>'
+        + '<td class="num ma-cell-20">' + r.ma20.toFixed(2) + '</td>'
+        + '<td class="num ma-close" style="background:' + bg + '">' + r.close.toFixed(2) + "</td></tr>";
+    });
+    html += "</tbody></table>";
+    el.innerHTML = html;
+  }
+  renderMaTable();
+
   document.querySelectorAll(".page-nav button").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll(".page-nav button").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
@@ -933,6 +1025,7 @@
       var page = btn.getAttribute("data-page");
       document.getElementById("view-radar").style.display = page === "radar" ? "" : "none";
       document.getElementById("view-decisions").style.display = page === "decisions" ? "" : "none";
+      document.getElementById("view-ma").style.display = page === "ma" ? "" : "none";
       if (page === "radar" && !tableMode) render();
     });
   });

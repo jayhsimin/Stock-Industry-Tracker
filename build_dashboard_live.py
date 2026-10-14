@@ -24,6 +24,7 @@ import volume_alert
 
 CHUNK = 400
 DECISIONS_PATH = os.path.join("trading", "decisions.json")
+MA_CACHE_PATH = "ma_cache.json"
 
 
 def load_decisions(path=DECISIONS_PATH):
@@ -34,6 +35,25 @@ def load_decisions(path=DECISIONS_PATH):
         return {"strategies": {}, "decisions": []}
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_ma_table(live, path=MA_CACHE_PATH):
+    """{"date": ..., "rows": [{code, name, ma5, ma10, ma20, close}, ...]} for
+    the 均線總覽 tab - MA5/10/20 come from build_ma_cache.py's once-a-day
+    cache (missing file -> empty rows, not an error, since that script may
+    just not have been run yet), close is the SAME live snapshot price
+    already fetched above - no extra Shioaji calls needed here."""
+    if not os.path.exists(path):
+        return {"date": None, "rows": []}
+    with open(path, encoding="utf-8") as f:
+        cache = json.load(f)
+    rows = []
+    for code, entry in cache.get("stocks", {}).items():
+        if code not in live:
+            continue
+        rows.append({"code": code, "name": entry["name"], "ma5": entry["ma5"],
+                      "ma10": entry["ma10"], "ma20": entry["ma20"], "close": live[code]["close"]})
+    return {"date": cache.get("date"), "rows": rows}
 
 
 def group_membership(conn):
@@ -137,6 +157,7 @@ def main():
         "industries": build_groups(industries),
         "concepts": build_groups(concepts),
         "decisions": load_decisions(),
+        "ma_table": load_ma_table(live),
     }
     conn.close()
 
@@ -153,7 +174,8 @@ def main():
         f.write(final)
 
     print(f"built {args.out} and {args.push_json}: "
-          f"{len(data['industries'])} industries, {len(data['concepts'])} concepts")
+          f"{len(data['industries'])} industries, {len(data['concepts'])} concepts, "
+          f"{len(data['ma_table']['rows'])} stocks in ma_table")
 
 
 if __name__ == "__main__":

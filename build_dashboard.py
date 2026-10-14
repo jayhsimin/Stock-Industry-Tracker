@@ -85,7 +85,11 @@ def build_data(conn, iso_date):
             "stocks": [{"code": r[0], "name": r[1], "close": r[2], "pct": r[3]} for r in rows],
         }
 
-    return {"date": iso_date, "industries": industries, "concepts": concepts, "decisions": load_decisions()}
+    # 均線總覽 needs a live current price (Shioaji snapshot) to compare against
+    # MA5/10/20 - this EOD/twstock.db build has no live price, so it ships an
+    # empty table rather than a stale one; build_dashboard_live.py fills it.
+    return {"date": iso_date, "industries": industries, "concepts": concepts, "decisions": load_decisions(),
+            "ma_table": {"date": None, "rows": []}}
 
 
 def main():
