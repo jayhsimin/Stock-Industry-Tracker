@@ -37,12 +37,16 @@ def load_decisions(path=DECISIONS_PATH):
         return json.load(f)
 
 
+MA_PERIODS = (5, 10, 20, 60, 240)
+
+
 def load_ma_table(live, path=MA_CACHE_PATH):
-    """{"date": ..., "rows": [{code, name, ma5, ma10, ma20, close}, ...]} for
-    the 均線總覽 tab - MA5/10/20 come from build_ma_cache.py's once-a-day
-    cache (missing file -> empty rows, not an error, since that script may
-    just not have been run yet), close is the SAME live snapshot price
-    already fetched above - no extra Shioaji calls needed here."""
+    """{"date": ..., "rows": [{code, name, ma5, ma10, ma20, ma60, ma240, close}, ...]}
+    for the 均線總覽 tab - MA5/10/20/60(季線)/240(年線) come from
+    build_ma_cache.py's once-a-day cache (missing file -> empty rows, not an
+    error, since that script may just not have been run yet), close is the
+    SAME live snapshot price already fetched above - no extra Shioaji calls
+    needed here."""
     if not os.path.exists(path):
         return {"date": None, "rows": []}
     with open(path, encoding="utf-8") as f:
@@ -51,8 +55,9 @@ def load_ma_table(live, path=MA_CACHE_PATH):
     for code, entry in cache.get("stocks", {}).items():
         if code not in live:
             continue
-        rows.append({"code": code, "name": entry["name"], "ma5": entry["ma5"],
-                      "ma10": entry["ma10"], "ma20": entry["ma20"], "close": live[code]["close"]})
+        row = {"code": code, "name": entry["name"], "close": live[code]["close"]}
+        row.update({f"ma{p}": entry.get(f"ma{p}") for p in MA_PERIODS})  # ma240 may be missing/None
+        rows.append(row)
     return {"date": cache.get("date"), "rows": rows}
 
 

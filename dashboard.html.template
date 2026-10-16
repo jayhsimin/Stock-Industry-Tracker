@@ -23,6 +23,8 @@
     --ma5: 76, 124, 246;
     --ma10: 139, 92, 246;
     --ma20: 230, 140, 30;
+    --ma60: 214, 51, 132;
+    --ma240: 13, 148, 136;
     --radius-s: 8px;
     --radius-m: 14px;
     font-size: 16px;
@@ -46,6 +48,8 @@
       --ma5: 108, 147, 255;
       --ma10: 167, 139, 250;
       --ma20: 244, 184, 96;
+      --ma60: 244, 114, 182;
+      --ma240: 45, 212, 191;
     }
   }
   :root[data-theme="dark"] {
@@ -66,6 +70,8 @@
     --ma5: 108, 147, 255;
     --ma10: 167, 139, 250;
     --ma20: 244, 184, 96;
+    --ma60: 244, 114, 182;
+    --ma240: 45, 212, 191;
   }
 
   * { box-sizing: border-box; }
@@ -283,11 +289,15 @@
   .ma-legend i.ma5 { background: rgb(var(--ma5)); }
   .ma-legend i.ma10 { background: rgb(var(--ma10)); }
   .ma-legend i.ma20 { background: rgb(var(--ma20)); }
+  .ma-legend i.ma60 { background: rgb(var(--ma60)); }
+  .ma-legend i.ma240 { background: rgb(var(--ma240)); }
   .ma-note { color: var(--text-muted); font-size: 0.82rem; margin: 0 0 14px; max-width: 760px; }
   td.ma-close { font-weight: 600; }
   td.ma-cell-5 { background: rgba(var(--ma5), 0.42); }
   td.ma-cell-10 { background: rgba(var(--ma10), 0.42); }
   td.ma-cell-20 { background: rgba(var(--ma20), 0.42); }
+  td.ma-cell-60 { background: rgba(var(--ma60), 0.42); }
+  td.ma-cell-240 { background: rgba(var(--ma240), 0.42); }
 
   .tooltip {
     position: fixed;
@@ -543,13 +553,15 @@
       <div class="chart-caption">
         <h2>題材股均線總覽 · 依個股名稱排序</h2>
       </div>
-      <p class="ma-note">MA5/MA10/MA20 一天只重新計算一次（Shioaji歷史K棒需逐檔抓取，速度跟盤中即時報價不同步），
-        現價則跟題材雷達一樣每次刷新都更新。現價格的底色是跟MA5/MA10/MA20三個顏色的混合——現價離哪條均線的
+      <p class="ma-note">MA5/MA10/MA20/MA60/MA240 一天只重新計算一次（Shioaji歷史K棒需逐檔抓取，速度跟盤中即時報價不同步），
+        現價則跟題材雷達一樣每次刷新都更新。現價格的底色是跟五條均線顏色的混合——現價離哪條均線的
         百分比距離最近，底色就偏向那條均線的顏色，可以快速看出現在比較貼近短中長哪一條均線。</p>
       <div class="ma-legend">
         <span><i class="ma5"></i>MA5（週線）</span>
         <span><i class="ma10"></i>MA10（兩週線）</span>
         <span><i class="ma20"></i>MA20（月線）</span>
+        <span><i class="ma60"></i>MA60（季線）</span>
+        <span><i class="ma240"></i>MA240（年線）</span>
       </div>
       <div id="ma-table-view" class="table-wrap"></div>
     </div>
@@ -965,28 +977,30 @@
   }
   renderDecisions();
 
-  // --- 均線總覽 tab: MA5/10/20 come from build_ma_cache.py's once-a-day
-  // cache (embedded as DATA.ma_table by build_dashboard.py / build_dashboard_
-  // live.py); close is this run's live snapshot price. The 現價 cell's
-  // background blends the three MA anchor colors, weighted by inverse
-  // %-distance from close to each MA - closer to one MA's value pulls the
-  // color toward that MA's own color.
+  // --- 均線總覽 tab: MA5/10/20/60/240 come from build_ma_cache.py's
+  // once-a-day cache (embedded as DATA.ma_table by build_dashboard.py /
+  // build_dashboard_live.py); close is this run's live snapshot price. The
+  // 現價 cell's background blends all five MA anchor colors, weighted by
+  // inverse %-distance from close to each MA - closer to one MA's value
+  // pulls the color toward that MA's own color.
+  var MA_PERIODS = [5, 10, 20, 60, 240];
+
   function maRgb(name) {
     var v = getComputedStyle(document.documentElement).getPropertyValue("--" + name).trim();
     return v.split(",").map(function (x) { return parseFloat(x); });
   }
 
-  function blendCloseColor(close, ma5, ma10, ma20) {
-    var anchors = [["ma5", ma5], ["ma10", ma10], ["ma20", ma20]];
+  function blendCloseColor(close, r) {
     var eps = 1e-6;
-    var weights = anchors.map(function (a) {
-      var dist = Math.abs(close - a[1]) / a[1];
+    var available = MA_PERIODS.filter(function (p) { return r["ma" + p] != null; });
+    var weights = available.map(function (p) {
+      var dist = Math.abs(close - r["ma" + p]) / r["ma" + p];
       return 1 / (dist + eps);
     });
     var sum = weights.reduce(function (s, w) { return s + w; }, 0);
     var rgb = [0, 0, 0];
-    anchors.forEach(function (a, i) {
-      var c = maRgb(a[0]);
+    available.forEach(function (p, i) {
+      var c = maRgb("ma" + p);
       var w = weights[i] / sum;
       rgb[0] += c[0] * w; rgb[1] += c[1] * w; rgb[2] += c[2] * w;
     });
@@ -1004,13 +1018,16 @@
     var rows = ma.rows.slice().sort(function (a, b) { return a.name.localeCompare(b.name, "zh-Hant"); });
     var html = '<table class="movers"><thead><tr>'
       + '<th>個股名稱</th><th>代號</th><th class="num">MA5</th><th class="num">MA10</th>'
-      + '<th class="num">MA20</th><th class="num">現價</th></tr></thead><tbody>';
+      + '<th class="num">MA20</th><th class="num">MA60</th><th class="num">MA240</th>'
+      + '<th class="num">現價</th></tr></thead><tbody>';
+    function maCell(p, r) {
+      var v = r["ma" + p];
+      return '<td class="num ma-cell-' + p + '">' + (v == null ? "—" : v.toFixed(2)) + '</td>';
+    }
     rows.forEach(function (r) {
-      var bg = blendCloseColor(r.close, r.ma5, r.ma10, r.ma20);
+      var bg = blendCloseColor(r.close, r);
       html += "<tr><td>" + r.name + '</td><td class="code">' + r.code + '</td>'
-        + '<td class="num ma-cell-5">' + r.ma5.toFixed(2) + '</td>'
-        + '<td class="num ma-cell-10">' + r.ma10.toFixed(2) + '</td>'
-        + '<td class="num ma-cell-20">' + r.ma20.toFixed(2) + '</td>'
+        + maCell(5, r) + maCell(10, r) + maCell(20, r) + maCell(60, r) + maCell(240, r)
         + '<td class="num ma-close" style="background:' + bg + '">' + r.close.toFixed(2) + "</td></tr>";
     });
     html += "</tbody></table>";
