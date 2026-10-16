@@ -42,6 +42,7 @@ trading/channel_backtest_300d_cb.txt
 trading/channel_cv_300d_cb_multiperiod.txt
 trading/channel_cv_300d_nocb_multiperiod.txt
 trading/daytrade/channel_backtest_result.txt
+trading/daytrade/xq_signals_backtest_result.txt
 trading/momentum_backtest_result.txt
 trading/momentum_backtest_compare.txt
 trading/ma_touch/backtest_result.txt
