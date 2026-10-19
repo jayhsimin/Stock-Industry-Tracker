@@ -6,6 +6,8 @@ trading/reports/YYYY-MM-DD.txt (gitignored directory) plus stdout.
 import os
 from datetime import date
 
+from . import positions
+
 
 def _fmt_pct(x):
     return f"{x * 100:+.2f}%"
@@ -13,7 +15,12 @@ def _fmt_pct(x):
 
 def build(run_date, new_signals, open_status, exits_today, budget_skipped=None):
     """new_signals: list of (code, name, conditions_dict) that passed check_entry.
-    open_status: list of (code, name, entry_price, current_price, days_held, exit_conditions_dict).
+    open_status: list of (code, name, entry_price, current_price, days_held,
+    exit_conditions_dict, shares) - shares is used to show NET (fee+tax
+    adjusted) unrealized P&L via positions.unrealized(), not
+    exit_conditions_dict['unrealized_return'] (that one's the RAW price
+    move used for the stop-loss/take-profit threshold check and is kept
+    as-is for that purpose - see positions.net_return()'s docstring).
     exits_today: list of trading.positions.close_position() return records.
     budget_skipped: list of (code, name, close_price, score) that passed check_entry
     but got 0 shares from executor.shares_to_buy() - the remaining budget couldn't
@@ -38,12 +45,12 @@ def build(run_date, new_signals, open_status, exits_today, budget_skipped=None):
     lines.append(f"-- 持倉狀態 ({len(open_status)}) --")
     if not open_status:
         lines.append("（無持倉）")
-    for code, name, entry_price, current_price, held, exit_cond in open_status:
-        ret = exit_cond["unrealized_return"]
+    for code, name, entry_price, current_price, held, exit_cond, shares in open_status:
+        pnl, net_ret = positions.unrealized(entry_price, current_price, shares)
         flag = " <- 將出場" if exit_cond["exit_signal"] else ""
         lines.append(
-            f"{code} {name}｜進場{entry_price} 現價{current_price} 損益{_fmt_pct(ret)}｜"
-            f"持有{held}個交易日{flag}"
+            f"{code} {name}｜進場{entry_price} 現價{current_price} "
+            f"損益{_fmt_pct(net_ret)}(已扣手續費/稅,NT${pnl:+,.0f})｜持有{held}個交易日{flag}"
         )
 
     lines.append("")

@@ -19,6 +19,10 @@ from datetime import date, timedelta
 
 from . import config
 
+FEE_RATE = 0.001425              # 手續費, each way
+TAX_RATE_NORMAL_SELL = 0.003     # 證交稅 on sell, multi-day hold
+TAX_RATE_DAYTRADE_SELL = 0.0015  # 證交稅 on sell, halved rate for same-day 現股當沖
+
 TRADE_LOG_FILE = "trading/trade_log.txt"
 
 SOURCE_LABELS = {
@@ -78,29 +82,68 @@ def open_position(code, name, entry_price, shares, entry_date=None, side="long",
     return True
 
 
+def net_return(entry_price, exit_price, shares, side="long", is_daytrade=False):
+    """Fee+tax-adjusted P&L - the live-tracking equivalent of every backtest
+    script's own net_return() (channel_backtest.py, swing_backtest.py, etc.),
+    so a reported % here means the same thing a backtest's % means: what you'd
+    actually keep after FEE_RATE each way plus the sell leg's transaction tax
+    (halved for a same-day 現股當沖 exit vs. a normal multi-day hold's sell
+    tax). For a short position the tax is charged on the SELL leg, which is
+    the ENTRY (融券賣出), not the exit (回補買回) - mirrors
+    trading/daytrade/backtest.py's convention. This is for P&L REPORTING
+    only - signals.py's own check_exit() functions compare RAW (pre-fee)
+    price moves against their stop-loss/take-profit thresholds, since
+    that's how every strategy was backtested and validated; don't feed this
+    into an exit decision."""
+    tax_rate = TAX_RATE_DAYTRADE_SELL if is_daytrade else TAX_RATE_NORMAL_SELL
+    if side == "long":
+        cost = entry_price * shares * (1 + FEE_RATE)
+        proceeds = exit_price * shares * (1 - FEE_RATE - tax_rate)
+    else:
+        proceeds = entry_price * shares * (1 - FEE_RATE - tax_rate)
+        cost = exit_price * shares * (1 + FEE_RATE)
+    pnl = proceeds - cost
+    return pnl, pnl / cost
+
+
 def close_position(code, exit_price, exit_reason, exit_date=None,
                     state_file=config.POSITIONS_STATE_FILE):
-    """Returns the closed-trade record, or None if `code` wasn't open."""
+    """Returns the closed-trade record, or None if `code` wasn't open.
+    realized_return/realized_pnl are NET of fees+tax (see net_return()) -
+    same-day entry/exit is treated as a 現股當沖 exit (halved sell tax)."""
     state = _load(state_file)
     pos = state["open"].pop(code, None)
     if pos is None:
         return None
     side = pos.get("side", "long")  # old records predating `side` default to long
-    raw_return = (exit_price - pos["entry_price"]) / pos["entry_price"]
-    realized_return = raw_return if side == "long" else -raw_return
+    exit_date = exit_date or date.today().isoformat()
+    is_daytrade = exit_date == pos["entry_date"]
+    pnl, realized_return = net_return(pos["entry_price"], exit_price, pos["shares"],
+                                       side=side, is_daytrade=is_daytrade)
     record = {
         **pos,
         "code": code,
         "exit_price": exit_price,
-        "exit_date": exit_date or date.today().isoformat(),
+        "exit_date": exit_date,
         "exit_reason": exit_reason,
         "realized_return": round(realized_return, 4),
+        "realized_pnl": round(pnl, 0),
     }
     state["closed"].append(record)
     _save(state, state_file)
     _log_trade(f"[平倉] {code}{pos.get('name', '')}｜@{pos['entry_price']}->{exit_price}｜"
-               f"{realized_return*100:+.2f}%｜原因:{exit_reason}", state_file)
+               f"{realized_return*100:+.2f}%(已扣手續費/稅)｜原因:{exit_reason}", state_file)
     return record
+
+
+def unrealized(entry_price, current_price, shares, side="long"):
+    """Same fee+tax-adjusted P&L as net_return(), for an OPEN position
+    marked to the current price - i.e. "what you'd net if you closed right
+    now." Always uses the normal (non-daytrade) sell tax rate, since every
+    pool that can still be open when this is called (swing/channel/ma_touch)
+    is a multi-day hold by construction - the day-trade pool always flattens
+    before end of day, so it never has open positions to mark."""
+    return net_return(entry_price, current_price, shares, side=side, is_daytrade=False)
 
 
 def days_held(entry_date_str, as_of=None):

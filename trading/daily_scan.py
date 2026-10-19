@@ -111,7 +111,7 @@ def main():
             # as None, same idiom intraday_monitor.py already uses to skip it
             # intraday - see trading/decisions.json.
             exit_cond = signals.check_exit(pos["entry_price"], current_price, held, theme_median_pct=None)
-            open_status.append((code, pos["name"], pos["entry_price"], current_price, held, exit_cond))
+            open_status.append((code, pos["name"], pos["entry_price"], current_price, held, exit_cond, pos["shares"]))
             if exit_cond["exit_signal"]:
                 contract = contracts.get(code)
                 shares = pos["shares"]
