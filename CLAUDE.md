@@ -18,7 +18,11 @@ file is the architecture map.
 pip install -r requirements.txt        # only dependency: requests
 
 python fetch_daily.py                  # pull today's snapshot into twstock.db
-python fetch_daily.py --date 2026-09-24  # backfill/refetch a specific date (upsert-safe, re-run anytime)
+python fetch_daily.py --date 2026-09-24  # backfill/refetch a specific date (upsert-safe, re-run anytime) -
+                                          # only works for datasets with real historical query support
+                                          # (margin_trading, institutional_investors); see "Publish-time
+                                          # lag + holidays" below — stock_price/stock_valuation CANNOT be
+                                          # backfilled this way
 
 python industry_report.py --date 2026-09-24              # 4 reports grouped by official 產業別
 python concept_report.py --date 2026-09-24 [--detail]    # ranks self-curated concepts by avg %change
@@ -73,6 +77,19 @@ publish later in the evening than `margin_trading`/`institutional_investors` for
 trading day — don't assume "today" has all tables populated. The market can also be closed
 for several consecutive days (TWSE's `holidaySchedule` endpoint has the calendar); check
 before assuming the most recent calendar weekday has trading data.
+
+**STOCK_DAY_ALL/BWIBBU_ALL have NO historical-query support — `--date` is silently ignored
+for them.** Confirmed 2026-10: running `fetch_daily.py --date <past-date>` for 13 different
+past trading days still only ever wrote the single most-recently-published day into
+`stock_price`/`stock_valuation` (whatever ROC date is embedded in the response itself,
+per the "ROC-calendar dates" note above — these endpoints just return "latest," ignoring
+the requested date), so after the loop the table still only had 3 scattered dates instead
+of a continuous run. This is different from `margin_trading`/`institutional_investors`,
+which genuinely honor `--date` (no embedded `Date` field, so `fetch_daily.py` stamps
+whatever `--date` was passed — see `backfill_institutional.py`, built specifically because
+T86 does support this). **A `stock_price`/`stock_valuation` gap from not running
+`fetch_daily.py` daily is permanent and cannot be backfilled retroactively** — only a
+daily-scheduled run accumulates real history for these two tables going forward.
 
 **TWSE and TPEx merge into the same tables under different field names.** TPEx uses
 different field names than TWSE for equivalent data (e.g. TWSE's price dataset has
