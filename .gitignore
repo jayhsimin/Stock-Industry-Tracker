@@ -49,3 +49,7 @@ trading/ma_touch/backtest_result.txt
 trading/ma_touch/cross_validate_result.txt
 trading/momentum_backtest_factors.txt
 trading/momentum_backtest_reversal_grid.txt
+trading/price_volume_pattern_result.txt
+trading/quiet_strength_backtest_result.txt
+trading/quiet_strength_cv_result.txt
+trading/quiet_strength_cv_multiperiod_result.txt
