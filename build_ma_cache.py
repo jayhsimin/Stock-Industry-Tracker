@@ -1,5 +1,5 @@
-"""Pre-computes MA5/MA10/MA20/MA60(季線)/MA240(年線) (daily closing-price
-moving averages) for every concept_map stock, cached to ma_cache.json
+"""Pre-computes MA5/MA10/MA20/MA60(季線) (daily closing-price moving
+averages) for every concept_map stock, cached to ma_cache.json
 (gitignored). The dashboard's 均線總覽 tab reads this cache instead of
 recomputing it on every refresh - Shioaji's kbars() (needed for historical
 daily closes, same as trading/ma_data.py uses for the swing strategy's own
@@ -9,11 +9,11 @@ dashboard's 1-minute refresh cadence. Run this on its own, slower schedule
 instead (once per day, e.g. before market open); build_dashboard_live.py
 just reads whatever's in the cache and overlays the live current price.
 
-MA240 (年線) needs ~240 trading days of history (~335+ calendar days with
-weekends/holidays) - far more than trading/ma_data.py's daily_closes()
-gives (DAYS_BACK=90, sized for the swing strategy's own MA60 ceiling, not
-touched here so that production code path stays exactly as validated).
-daily_closes_long() below fetches its own longer window directly instead.
+2026-10: tried adding MA240 (年線) too, but Shioaji's simulation history
+depth per stock varies (seen 167-230 calendar days of trading history on
+different stocks the same day) and none currently reach the ~240 trading
+days MA240 needs even with a much longer fetch window - removed again
+rather than ship a column that's permanently empty.
 
 Usage:
     python build_ma_cache.py
@@ -25,37 +25,14 @@ import os
 import sqlite3
 import sys
 import warnings
-from datetime import date, timedelta
-
-import pandas as pd
+from datetime import date
 
 import db
 import utils
 from trading import ma_data
 
-MA_PERIODS = (5, 10, 20, 60, 240)
-REQUIRED_PERIODS = (5, 10, 20, 60)  # MA240 (年線) is best-effort, not required to
-# keep a stock - as of 2026-10, Shioaji's simulation history depth per stock
-# varies (seen 167-230 calendar days of trading history on different stocks on
-# the same day) and none currently reach the ~240 trading days MA240 needs;
-# requiring it would empty the whole cache. Ships as null until a stock's
-# available history crosses that line - see dashboard.html.template's JS,
-# which already renders a missing MA as "—" and excludes it from the blend.
-LONG_DAYS_BACK = 400  # calendar days - comfortably covers 240 trading days
+MA_PERIODS = (5, 10, 20, 60)
 OUT_FILE = "ma_cache.json"
-
-
-def daily_closes_long(api, contract, days_back=LONG_DAYS_BACK):
-    """Same resample-to-daily-close logic as trading/ma_data.py's
-    daily_closes(), just with a longer, configurable lookback - needed for
-    MA240 (年線), which that function's fixed 90-day window can't reach."""
-    end = date.today()
-    start = end - timedelta(days=days_back)
-    kbars = api.kbars(contract, start=start.isoformat(), end=end.isoformat())
-    if not kbars.ts:
-        return pd.Series(dtype=float)
-    df = pd.DataFrame({"ts": pd.to_datetime(kbars.ts), "close": kbars.Close}).set_index("ts")
-    return df["close"].resample("1D").last().dropna()
 
 
 def main():
@@ -90,17 +67,14 @@ def main():
             contract = api.Contracts.Stocks.get(code)
             if contract is None:
                 continue
-            closes = daily_closes_long(api, contract)
+            closes = ma_data.daily_closes(api, contract)
             mas = ma_data.compute_mas(closes, MA_PERIODS)
-            if all(p in mas for p in REQUIRED_PERIODS):
-                result[code] = {"name": names.get(code, code),
-                                 **{f"ma{p}": mas.get(p) for p in MA_PERIODS}}  # ma240 may be None
+            if len(mas) == len(MA_PERIODS):  # only keep stocks with enough history for all 4
+                result[code] = {"name": names.get(code, code), **{f"ma{p}": mas[p] for p in MA_PERIODS}}
 
         api.logout()
 
-    n_with_240 = sum(1 for v in result.values() if v.get("ma240") is not None)
-    print(f"{len(result)}/{len(codes)} 檔有足夠歷史資料算出MA5/10/20/60"
-          f"（其中{n_with_240}檔歷史夠長、也算出了MA240）")
+    print(f"{len(result)}/{len(codes)} 檔有足夠歷史資料算出完整MA5/10/20/60")
 
     out = {"date": date.today().isoformat(), "stocks": result}
     with open(args.out, "w", encoding="utf-8") as f:
