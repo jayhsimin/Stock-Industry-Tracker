@@ -53,3 +53,8 @@ trading/price_volume_pattern_result.txt
 trading/quiet_strength_backtest_result.txt
 trading/quiet_strength_cv_result.txt
 trading/quiet_strength_cv_multiperiod_result.txt
+trading/channel_ranked_backtest_result.txt
+trading/channel_ranked_cv_result.txt
+trading/channel_ranked_cv_multiperiod_result.txt
+trading/channel_ranked_weight_grid_result.txt
+trading/chip_divergence_study_result.txt
