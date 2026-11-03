@@ -91,6 +91,21 @@ T86 does support this). **A `stock_price`/`stock_valuation` gap from not running
 `fetch_daily.py` daily is permanent and cannot be backfilled retroactively** — only a
 daily-scheduled run accumulates real history for these two tables going forward.
 
+**`warrant_info`/`warrant_trading` (added 2026-10) cover 權證, both markets.** TWSE's
+`t187ap37_L`/`t187ap42_L` and TPEx's `mopsfin_t187ap37_O`/`mopsfin_t187ap42_O` already use
+**identical** Chinese field names across both markets for `warrant_info` (標的證券/履約價/
+到期日 etc. - no remap needed, same pattern as `monthly_revenue_tpex`), and only one field
+differs for `warrant_trading` (TPEx's `成交數量` vs TWSE's `成交張數` - handled by
+`WARRANT_TRADING_TPEX_MAP`, mode `"partial"`). `warrant_info` has no `date_field` and
+upserts by `權證代號` alone (like `company_info` - the row just gets overwritten in place as
+履約價/備註 etc. change over the warrant's life); `warrant_trading` is dated by `交易日期`
+like `stock_price`. **TWSE's `t187ap42_L` (成交金額/warrant_trading) can return an empty
+array even when `STOCK_DAY_ALL` has same-day data** (confirmed 2026-10-27, 22:41 - regular
+`stock_price` had 1383 rows, `t187ap42_L` had 0) - a different, not-yet-understood publish
+timing from the rest of the chip datasets, not a bug; `fetch_dataset()` already handles a
+`[]` response as "no data yet," same as any other dataset. TPEx's side was unaffected
+(12,166 rows) on that same run.
+
 **TWSE and TPEx merge into the same tables under different field names.** TPEx uses
 different field names than TWSE for equivalent data (e.g. TWSE's price dataset has
 `Code`/`ClosingPrice`, TPEx's has `SecuritiesCompanyCode`/`Close`). Every TPEx entry in

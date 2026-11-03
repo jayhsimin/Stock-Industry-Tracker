@@ -56,6 +56,14 @@ CHIP_DATASETS = [
         "date_field": None,
         "key_cols": ["股票代號", "iso_date"],
     },
+    {
+        "name": "warrant_trading",
+        "table": "warrant_trading",
+        "url": f"{OPENAPI_BASE}/opendata/t187ap42_L",
+        "date_field": "交易日期",
+        "date_is_roc": True,
+        "key_cols": ["權證代號", "iso_date"],
+    },
 ]
 
 # --- TPEx (上櫃) field-name maps: source key -> target key, matching the
@@ -120,6 +128,9 @@ FIN_STATEMENT_TPEX_MAP = {
     "Date": "出表日期", "SecuritiesCompanyCode": "公司代號",
     "CompanyName": "公司名稱", "Year": "年度", "Season": "季別",
 }
+WARRANT_TRADING_TPEX_MAP = {
+    "成交數量": "成交張數",
+}
 
 TPEX_CHIP_DATASETS = [
     {
@@ -158,6 +169,17 @@ TPEX_CHIP_DATASETS = [
         "key_cols": ["證券代號", "iso_date"],
         "remap": (INSTITUTIONAL_TPEX_MAP, "full"),
     },
+    {
+        # same 權證代號/權證名稱/成交金額/交易日期 field names as TWSE's t187ap42_L
+        # already - only 成交數量 needs renaming to match TWSE's 成交張數.
+        "name": "warrant_trading_tpex",
+        "table": "warrant_trading",
+        "url": f"{TPEX_BASE}/mopsfin_t187ap42_O",
+        "date_field": "交易日期",
+        "date_is_roc": True,
+        "key_cols": ["權證代號", "iso_date"],
+        "remap": (WARRANT_TRADING_TPEX_MAP, "partial"),
+    },
 ]
 
 # --- 基本面 (fundamentals) --------------------------------------------------
@@ -182,6 +204,15 @@ FUNDAMENTAL_DATASETS = [
         "url": f"{OPENAPI_BASE}/opendata/t187ap45_L",
         "date_field": None,
         "key_cols": ["公司代號", "股利年度", "期別"],
+    },
+    {
+        # 標的證券/履約價/到期日等 - rarely changes day to day, upserted by
+        # 權證代號 alone like company_info rather than dated like warrant_trading.
+        "name": "warrant_info",
+        "table": "warrant_info",
+        "url": f"{OPENAPI_BASE}/opendata/t187ap37_L",
+        "date_field": None,
+        "key_cols": ["權證代號"],
     },
 ]
 
@@ -222,6 +253,14 @@ TPEX_FUNDAMENTAL_DATASETS = [
         "url": f"{TPEX_BASE}/mopsfin_t187ap05_O",
         "date_field": None,
         "key_cols": ["公司代號", "資料年月"],
+    },
+    {
+        # already Chinese field names identical to TWSE's t187ap37_L - no remap needed
+        "name": "warrant_info_tpex",
+        "table": "warrant_info",
+        "url": f"{TPEX_BASE}/mopsfin_t187ap37_O",
+        "date_field": None,
+        "key_cols": ["權證代號"],
     },
 ]
 
