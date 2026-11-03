@@ -187,6 +187,33 @@ is the filter. Shioaji's `scanners(ChangePercentRank)` was tried as an alternati
 rejected — its results skewed toward thin-volume stocks clustered at exactly ±10%, not a
 clean ranking; our own EOD data is more reliable for this.
 
+**`margin_report.py` (added 2026-11) computes the dashboard's 融資融券 tab -
+market-wide leverage + bull/bear positioning - entirely from `margin_trading`,
+no new fetch needed.** `margin_trading` (TWSE's MI_MARGN + TPEx's
+`tpex_mainboard_margin_balance`, already in `datasets.py`) carries BOTH
+今日餘額 and 前日餘額 for 融資/融券 on every row, so day-over-day change is
+arithmetic on a single row - no self-join against yesterday's date needed.
+Balances are in 張 (1000-share lots); NT$ amounts are derived by multiplying
+by 1000 and that day's `stock_price` close. `build_margin_data()` returns
+market totals (融資/融券 balance in NT$, 市場資券比 = short/margin ratio at
+the whole-market level, today's net flow), six stock-level rankings (融資/
+融券 increase/decrease, 資券比 highest, 融資使用率 = balance/quota highest -
+closest to forced deleveraging), and concept/industry group aggregation
+(median 資券比 + summed lot change per theme, same `concept_map`/
+`industry_map` membership the bubble-chart tab already uses) - this is
+"various types of this kind of data," not just one number, by design (see
+2026-11 conversation). Like `market_movers.py`, `fetch_rows()` INNER JOINs
+`company_info` to exclude ETFs/bonds (e.g. `00679B`) that are margin-eligible
+but aren't companies and would otherwise dominate the lot-change rankings.
+This data is EOD-only - TWSE/TPEx publish 融資融券 balances once after
+close, Shioaji has no live feed for it - so `build_dashboard.py` and
+`build_dashboard_live.py` both call `build_margin_data()` against
+`twstock.db` the exact same way (reading `margin_trading`'s own latest
+`iso_date`, which can lag `stock_price`'s), unlike `ma_table`/price which
+differ between the two builds. `margin_report.py` is also runnable standalone
+(`python margin_report.py --date 2026-10-27`) like `industry_report.py`/
+`concept_report.py`.
+
 **`trading/` is a deliberately isolated module - a real (user-specified, not
 Claude-invented) swing strategy with a hard simulation-only gate.** See
 `trading/README.md` for the full rule set; the one fact that must never
@@ -284,6 +311,8 @@ visible on the dashboard instead of needing to be re-derived from chat/git histo
 - `industry_report.py` — 4 reports grouped by official `industry_map`
 - `concept_report.py` — ranks `concept_map` themes by average %change (computed from raw
   point `Change`, since TWSE doesn't provide percentage directly)
+- `margin_report.py` — market-wide leverage + bull/bear positioning from `margin_trading`
+  for the dashboard's 融資融券 tab (see Architecture above)
 - `stock_lookup.py` — shared lookup/validation/enrichment (see Architecture above)
 - `concept_map.py` — CRUD for the hand-curated `concept_map` table
 - `shioaji_test.py` — first-contact Shioaji connectivity test, dumps raw responses
@@ -292,8 +321,8 @@ visible on the dashboard instead of needing to be re-derived from chat/git histo
   concept_map's tracked stocks) with industry/concept classification, plus a day-over-day
   industry-representation trend view
 - `dashboard.html.template` — bubble-chart dashboard shell + 交易決策 (decisions log) +
-  均線總覽 (MA5/10/20 table) tabs; `__DATA_JSON__` is the data injection point, never edit
-  the built `dashboard.html` directly
+  均線總覽 (MA5/10/20 table) + 融資融券 (leverage/bull-bear) tabs; `__DATA_JSON__` is the
+  data injection point, never edit the built `dashboard.html` directly
 - `build_dashboard.py` / `build_dashboard_live.py` — fill the template from twstock.db
   (EOD) or Shioaji (intraday) respectively, both producing `dashboard.html` (gitignored
   build output). `build_dashboard_live.py` also writes `dashboard_push.json` (gitignored)

@@ -19,6 +19,7 @@ import warnings
 from datetime import datetime
 
 import db
+import margin_report
 import utils
 import volume_alert
 
@@ -156,12 +157,20 @@ def main():
             result[label] = {"n_stocks": len(stocks), "median_pct": median_pct, "stocks": stocks}
         return result
 
+    # 融資融券 is EOD-only (TWSE/TPEx publish it once after close; no Shioaji
+    # live feed for it) - same data/query as build_dashboard.py's EOD build,
+    # just read fresh from twstock.db here too rather than cached.
+    margin_date = conn.execute("SELECT MAX(iso_date) FROM margin_trading").fetchone()[0]
+    margin_data = margin_report.build_margin_data(conn, margin_date) if margin_date else \
+        {"date": None, "summary": None, "rankings": {}, "groups": {}}
+
     data = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M") + " 盤中即時更新",
         "industries": build_groups(industries),
         "concepts": build_groups(concepts),
         "decisions": load_decisions(),
         "ma_table": load_ma_table(live),
+        "margin_data": margin_data,
     }
     conn.close()
 

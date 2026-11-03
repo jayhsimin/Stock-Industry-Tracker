@@ -27,6 +27,7 @@ trading/daytrade/news_track_comparison.txt
 trading/daytrade/watchlist_state.json
 trading/daytrade/news_watchlist_state.json
 trading/daytrade/ai_chain_state.json
+trading/daytrade/ai_chain_positions_state.json
 trading/breakout_backtest_result.txt
 trading/swing_pattern_cv_result.txt
 trading/swing_backtest_result.txt
@@ -58,3 +59,4 @@ trading/channel_ranked_cv_result.txt
 trading/channel_ranked_cv_multiperiod_result.txt
 trading/channel_ranked_weight_grid_result.txt
 trading/chip_divergence_study_result.txt
+trading/daytrade/time_machine_backtest_result.txt

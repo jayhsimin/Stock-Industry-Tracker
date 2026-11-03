@@ -507,6 +507,7 @@
     <button type="button" role="tab" aria-pressed="true" data-page="radar">題材雷達</button>
     <button type="button" role="tab" aria-pressed="false" data-page="decisions">交易決策</button>
     <button type="button" role="tab" aria-pressed="false" data-page="ma">均線總覽</button>
+    <button type="button" role="tab" aria-pressed="false" data-page="margin">融資融券</button>
   </div>
 
   <div id="view-radar">
@@ -558,6 +559,46 @@
         <span><i class="ma60"></i>MA60（季線）</span>
       </div>
       <div id="ma-table-view" class="table-wrap"></div>
+    </div>
+  </div>
+
+  <div id="view-margin" style="display:none">
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2>全市場融資融券總覽</h2>
+      </div>
+      <p class="chart-note" id="margin-date-note"></p>
+      <div class="kpi-row" id="margin-kpi-row"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2>個股排行</h2>
+      </div>
+      <div class="segmented" role="tablist" aria-label="排行類別" style="margin-bottom:12px">
+        <button type="button" role="tab" aria-pressed="true" data-margin-rank="margin_increase">融資增加最多</button>
+        <button type="button" role="tab" aria-pressed="false" data-margin-rank="margin_decrease">融資減少最多</button>
+        <button type="button" role="tab" aria-pressed="false" data-margin-rank="short_increase">融券增加最多</button>
+        <button type="button" role="tab" aria-pressed="false" data-margin-rank="short_decrease">融券減少最多</button>
+        <button type="button" role="tab" aria-pressed="false" data-margin-rank="short_margin_ratio">資券比最高</button>
+        <button type="button" role="tab" aria-pressed="false" data-margin-rank="margin_usage">融資使用率最高</button>
+      </div>
+      <p class="chart-note">融資增加／融券增加代表散戶當天加碼做多／放空力道最強的個股；資券比 = 融券餘額/融資餘額
+        （張數），越高代表空方相對多方槓桿越重；融資使用率 = 融資餘額/融資限額，越接近100%代表越可能因限額被迫減碼。</p>
+      <div id="margin-rank-table" class="table-wrap"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2>題材／產業資券傾向</h2>
+      </div>
+      <div class="segmented" role="tablist" aria-label="分類方式" style="margin-bottom:12px">
+        <button type="button" role="tab" aria-pressed="true" data-margin-group="concepts">自建題材</button>
+        <button type="button" role="tab" aria-pressed="false" data-margin-group="industries">官方產業</button>
+      </div>
+      <p class="chart-note">同一題材/產業內所有個股的資券比取中位數，可看出整個族群偏多或偏空；
+        融資/融券變化張數是族群內所有個股當日增減的加總，用來看多空力道正往哪個題材集中。</p>
+      <div id="margin-group-table" class="table-wrap"></div>
     </div>
   </div>
 </div>
@@ -1029,6 +1070,138 @@
   }
   renderMaTable();
 
+  // --- 融資融券 tab: EOD-only data (TWSE/TPEx publish 融資融券餘額 once
+  // after close - no Shioaji live feed for it), embedded as DATA.margin_data
+  // by margin_report.build_margin_data() via build_dashboard.py /
+  // build_dashboard_live.py (same query either way, unlike ma_table/price).
+  var marginRankMode = "margin_increase";
+  var marginGroupMode = "concepts";
+
+  function fmtNtdBillions(v) {
+    if (v == null) return "—";
+    return (v / 1e8).toFixed(1) + " 億";
+  }
+  function fmtLots(v) {
+    if (v == null) return "—";
+    return (v >= 0 ? "+" : "") + v.toLocaleString();
+  }
+  function fmtRatio(v) {
+    return v == null ? "—" : v.toFixed(3);
+  }
+  function fmtUsagePct(v) {
+    return v == null ? "—" : v.toFixed(1) + "%";
+  }
+
+  function renderMarginKpis() {
+    var m = DATA.margin_data || {};
+    var s = m.summary;
+    var row = document.getElementById("margin-kpi-row");
+    var note = document.getElementById("margin-date-note");
+    if (!s) {
+      row.innerHTML = '<div class="empty-note">尚無融資融券資料 - 請先執行 <code>python fetch_daily.py</code>'
+        + '（會抓 margin_trading）。</div>';
+      note.textContent = "";
+      return;
+    }
+    note.textContent = "資料日期：" + m.date + "（TWSE/TPEx 收盤後才公布，盤中無法即時更新；"
+      + "已排除權證/ETF/債券，僅計 " + s.n_stocks + " 檔一般上市櫃公司）";
+    var tiles = [
+      { label: "全市場融資餘額", value: fmtNtdBillions(s.total_margin_ntd),
+        sub: fmtLots(s.margin_change_lots) + " 張", cls: s.margin_change_lots >= 0 ? "up" : "down" },
+      { label: "全市場融券餘額", value: fmtNtdBillions(s.total_short_ntd),
+        sub: fmtLots(s.short_change_lots) + " 張", cls: s.short_change_lots >= 0 ? "up" : "down" },
+      { label: "市場資券比", value: fmtRatio(s.market_short_margin_ratio), sub: "融券/融資（張數）" },
+      { label: "納入統計檔數", value: s.n_stocks + " 檔", sub: "" }
+    ];
+    row.innerHTML = "";
+    tiles.forEach(function (t) {
+      var el = document.createElement("div");
+      el.className = "kpi";
+      el.innerHTML = '<div class="kpi-label"></div><div class="kpi-value"></div>'
+        + (t.sub ? '<div class="kpi-sub ' + (t.cls || "") + '"></div>' : "");
+      el.querySelector(".kpi-label").textContent = t.label;
+      el.querySelector(".kpi-value").textContent = t.value;
+      if (t.sub) el.querySelector(".kpi-sub").textContent = t.sub;
+      row.appendChild(el);
+    });
+  }
+
+  function renderMarginRankTable() {
+    var m = DATA.margin_data || {};
+    var rows = (m.rankings && m.rankings[marginRankMode]) || [];
+    var el = document.getElementById("margin-rank-table");
+    if (!rows.length) {
+      el.innerHTML = '<div class="empty-note">尚無資料</div>';
+      return;
+    }
+    var html = '<table class="movers"><thead><tr><th>個股</th><th>代號</th><th class="num">收盤價</th>'
+      + '<th class="num">融資餘額(張)</th><th class="num">融資變化</th>'
+      + '<th class="num">融券餘額(張)</th><th class="num">融券變化</th>'
+      + '<th class="num">資券比</th><th class="num">融資使用率</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += "<tr><td>" + r.name + '</td><td class="code">' + r.code + '</td>'
+        + '<td class="num">' + (r.close != null ? r.close.toFixed(2) : "—") + '</td>'
+        + '<td class="num">' + r.margin_balance_lots.toLocaleString() + '</td>'
+        + '<td class="num">' + fmtLots(r.margin_change_lots) + '</td>'
+        + '<td class="num">' + r.short_balance_lots.toLocaleString() + '</td>'
+        + '<td class="num">' + fmtLots(r.short_change_lots) + '</td>'
+        + '<td class="num">' + fmtRatio(r.short_margin_ratio) + '</td>'
+        + '<td class="num">' + fmtUsagePct(r.margin_usage_pct) + '</td></tr>';
+    });
+    html += "</tbody></table>";
+    el.innerHTML = html;
+  }
+
+  function renderMarginGroupTable() {
+    var m = DATA.margin_data || {};
+    var groups = (m.groups && m.groups[marginGroupMode]) || {};
+    var el = document.getElementById("margin-group-table");
+    var names = Object.keys(groups);
+    if (!names.length) {
+      el.innerHTML = '<div class="empty-note">尚無資料</div>';
+      return;
+    }
+    names.sort(function (a, b) {
+      return (groups[b].median_short_margin_ratio || 0) - (groups[a].median_short_margin_ratio || 0);
+    });
+    var html = '<table class="movers"><thead><tr><th>分類</th><th class="num">檔數</th>'
+      + '<th class="num">資券比中位數</th><th class="num">融資變化(張)</th>'
+      + '<th class="num">融券變化(張)</th></tr></thead><tbody>';
+    names.forEach(function (name) {
+      var g = groups[name];
+      html += "<tr><td>" + name + '</td><td class="num">' + g.n_stocks + '</td>'
+        + '<td class="num">' + fmtRatio(g.median_short_margin_ratio) + '</td>'
+        + '<td class="num">' + fmtLots(g.margin_change_lots) + '</td>'
+        + '<td class="num">' + fmtLots(g.short_change_lots) + '</td></tr>';
+    });
+    html += "</tbody></table>";
+    el.innerHTML = html;
+  }
+
+  function renderMargin() {
+    renderMarginKpis();
+    renderMarginRankTable();
+    renderMarginGroupTable();
+  }
+  renderMargin();
+
+  document.querySelectorAll("[data-margin-rank]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("[data-margin-rank]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      btn.setAttribute("aria-pressed", "true");
+      marginRankMode = btn.getAttribute("data-margin-rank");
+      renderMarginRankTable();
+    });
+  });
+  document.querySelectorAll("[data-margin-group]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("[data-margin-group]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      btn.setAttribute("aria-pressed", "true");
+      marginGroupMode = btn.getAttribute("data-margin-group");
+      renderMarginGroupTable();
+    });
+  });
+
   document.querySelectorAll(".page-nav button").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll(".page-nav button").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
@@ -1037,6 +1210,7 @@
       document.getElementById("view-radar").style.display = page === "radar" ? "" : "none";
       document.getElementById("view-decisions").style.display = page === "decisions" ? "" : "none";
       document.getElementById("view-ma").style.display = page === "ma" ? "" : "none";
+      document.getElementById("view-margin").style.display = page === "margin" ? "" : "none";
       if (page === "radar" && !tableMode) render();
     });
   });
@@ -1065,6 +1239,7 @@
         document.getElementById("live-badge").style.display = "inline-flex";
         render();
         renderDecisions();
+        renderMargin();
         clearReloadCountdown();
       },
       function (err) {

@@ -17,6 +17,7 @@ import sqlite3
 import statistics
 
 import db
+import margin_report
 
 DECISIONS_PATH = os.path.join("trading", "decisions.json")
 
@@ -88,8 +89,14 @@ def build_data(conn, iso_date):
     # 均線總覽 needs a live current price (Shioaji snapshot) to compare against
     # MA5/10/20 - this EOD/twstock.db build has no live price, so it ships an
     # empty table rather than a stale one; build_dashboard_live.py fills it.
+    # 融資融券 is EOD-only data either way (no Shioaji feed for it), so both
+    # builds call margin_report.build_margin_data() against twstock.db the
+    # same way - unlike ma_table, there is no live variant here.
+    margin_date = conn.execute("SELECT MAX(iso_date) FROM margin_trading").fetchone()[0]
     return {"date": iso_date, "industries": industries, "concepts": concepts, "decisions": load_decisions(),
-            "ma_table": {"date": None, "rows": []}}
+            "ma_table": {"date": None, "rows": []},
+            "margin_data": margin_report.build_margin_data(conn, margin_date) if margin_date else
+            {"date": None, "summary": None, "rankings": {}, "groups": {}}}
 
 
 def main():
