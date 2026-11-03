@@ -741,6 +741,24 @@
 
   document.getElementById("as-of").textContent = "資料時間：" + DATA.date;
 
+  // Local-file mode auto-reloads the whole page every RELOAD_SECONDS (see
+  // that countdown further below) to pick up fresh data on disk - a plain
+  // location.reload() would otherwise always snap back to whichever view
+  // is the static HTML's default (題材雷達) regardless of what the viewer
+  // had open, since a full reload re-runs this script from scratch with no
+  // memory of prior state. localStorage is the one thing that survives a
+  // same-origin reload, so UI state the viewer is actively looking at
+  // (active tab, which stock is pulled up) is saved there and restored at
+  // the end of this script - wrapped in try/catch since a private window
+  // or blocked site data can make localStorage throw rather than just
+  // return null.
+  function lsGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function lsSet(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* ignore */ }
+  }
+
   function fmtPct(v) {
     var s = (v > 0 ? "+" : "") + v.toFixed(2) + "%";
     return s;
@@ -1382,12 +1400,15 @@
     });
   }
 
+  var ACTIVE_PROFILE_CODE_KEY = "twDashboardActiveProfileCode";
+
   function selectProfile(code) {
     var entry = profileIndex.find(function (m) { return m.code === code; });
     document.getElementById("profile-suggestions").style.display = "none";
     if (!entry) return;
     document.getElementById("profile-search-input").value = entry.name + "（" + entry.code + "）";
     renderProfileContent(entry.profile);
+    lsSet(ACTIVE_PROFILE_CODE_KEY, code);
   }
 
   function profileSection(title) {
@@ -1995,19 +2016,41 @@
     });
   })();
 
-  document.querySelectorAll(".page-nav button").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      document.querySelectorAll(".page-nav button").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
-      btn.setAttribute("aria-pressed", "true");
-      var page = btn.getAttribute("data-page");
-      document.getElementById("view-radar").style.display = page === "radar" ? "" : "none";
-      document.getElementById("view-decisions").style.display = page === "decisions" ? "" : "none";
-      document.getElementById("view-ma").style.display = page === "ma" ? "" : "none";
-      document.getElementById("view-margin").style.display = page === "margin" ? "" : "none";
-      document.getElementById("view-profile").style.display = page === "profile" ? "" : "none";
-      if (page === "radar" && !tableMode) render();
+  var PAGE_IDS = ["radar", "decisions", "ma", "margin", "profile"];
+  var ACTIVE_PAGE_KEY = "twDashboardActivePage";
+
+  // Shared by the nav click handler AND the restore-on-reload logic at the
+  // end of this script, so "which tab was clicked" and "which tab to come
+  // back to after an auto-reload" are never two different code paths that
+  // could drift apart.
+  function activatePage(page) {
+    if (PAGE_IDS.indexOf(page) === -1) page = "radar";
+    document.querySelectorAll(".page-nav button").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-page") === page ? "true" : "false");
     });
+    PAGE_IDS.forEach(function (id) {
+      document.getElementById("view-" + id).style.display = id === page ? "" : "none";
+    });
+    if (page === "radar" && !tableMode) render();
+    lsSet(ACTIVE_PAGE_KEY, page);
+  }
+
+  document.querySelectorAll(".page-nav button").forEach(function (btn) {
+    btn.addEventListener("click", function () { activatePage(btn.getAttribute("data-page")); });
   });
+
+  // Restore whatever the viewer had open before this reload (see the
+  // lsGet/lsSet note near the top of this script) - runs after
+  // initProfileTab()'s IIFE above has already built profileIndex, so
+  // selectProfile() has something to look the saved code up in. A page
+  // freshly opened for the first time has nothing saved yet, so this is a
+  // no-op and the static HTML's 題材雷達 default stands.
+  (function restoreViewerState() {
+    var savedPage = lsGet(ACTIVE_PAGE_KEY);
+    if (savedPage && savedPage !== "radar") activatePage(savedPage);
+    var savedCode = lsGet(ACTIVE_PROFILE_CODE_KEY);
+    if (savedCode) selectProfile(savedCode);
+  })();
 
   // Live updates: if this artifact has the `db` capability, subscribe to
   // dashboard/latest and re-render whenever Claude pushes a fresh snapshot -
