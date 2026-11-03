@@ -26,6 +26,7 @@ import volume_alert
 CHUNK = 400
 DECISIONS_PATH = os.path.join("trading", "decisions.json")
 MA_CACHE_PATH = "ma_cache.json"
+STOCK_PROFILES_PATH = "stock_profiles_cache.json"
 
 
 def load_decisions(path=DECISIONS_PATH):
@@ -34,6 +35,17 @@ def load_decisions(path=DECISIONS_PATH):
     file -> empty (so the dashboard still builds before any strategy exists)."""
     if not os.path.exists(path):
         return {"strategies": {}, "decisions": []}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_stock_profiles(path=STOCK_PROFILES_PATH):
+    """{"date": ..., "profiles": {code: {...}}} for the 個股基本面 tab,
+    built by build_stock_profiles_cache.py - not recomputed here (building
+    all ~2000 companies' profiles takes ~15-20s, same reasoning as
+    ma_cache.json's MA5/10/20/60). Missing file -> empty, not an error."""
+    if not os.path.exists(path):
+        return {"date": None, "profiles": {}}
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
@@ -160,9 +172,10 @@ def main():
     # 融資融券 is EOD-only (TWSE/TPEx publish it once after close; no Shioaji
     # live feed for it) - same data/query as build_dashboard.py's EOD build,
     # just read fresh from twstock.db here too rather than cached.
-    margin_date = conn.execute("SELECT MAX(iso_date) FROM margin_trading").fetchone()[0]
+    margin_date = margin_report.pick_latest_usable_date(conn)
     margin_data = margin_report.build_margin_data(conn, margin_date) if margin_date else \
         {"date": None, "summary": None, "rankings": {}, "groups": {}}
+    margin_data["history"] = margin_report.build_market_history(conn)
 
     data = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M") + " 盤中即時更新",
@@ -171,6 +184,7 @@ def main():
         "decisions": load_decisions(),
         "ma_table": load_ma_table(live),
         "margin_data": margin_data,
+        "stock_profiles": load_stock_profiles(),
     }
     conn.close()
 

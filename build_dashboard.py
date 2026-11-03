@@ -20,12 +20,24 @@ import db
 import margin_report
 
 DECISIONS_PATH = os.path.join("trading", "decisions.json")
+STOCK_PROFILES_PATH = "stock_profiles_cache.json"
 
 
 def load_decisions(path=DECISIONS_PATH):
     """See build_dashboard_live.py's load_decisions - same file, same shape."""
     if not os.path.exists(path):
         return {"strategies": {}, "decisions": []}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_stock_profiles(path=STOCK_PROFILES_PATH):
+    """See build_dashboard_live.py's load_stock_profiles - same cache file,
+    built by build_stock_profiles_cache.py (not recomputed here - building
+    all ~2000 companies' profiles takes ~15-20s, same reasoning as
+    ma_cache.json)."""
+    if not os.path.exists(path):
+        return {"date": None, "profiles": {}}
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
@@ -92,11 +104,14 @@ def build_data(conn, iso_date):
     # 融資融券 is EOD-only data either way (no Shioaji feed for it), so both
     # builds call margin_report.build_margin_data() against twstock.db the
     # same way - unlike ma_table, there is no live variant here.
-    margin_date = conn.execute("SELECT MAX(iso_date) FROM margin_trading").fetchone()[0]
+    margin_date = margin_report.pick_latest_usable_date(conn)
+    margin_data = margin_report.build_margin_data(conn, margin_date) if margin_date else \
+        {"date": None, "summary": None, "rankings": {}, "groups": {}}
+    margin_data["history"] = margin_report.build_market_history(conn)
     return {"date": iso_date, "industries": industries, "concepts": concepts, "decisions": load_decisions(),
             "ma_table": {"date": None, "rows": []},
-            "margin_data": margin_report.build_margin_data(conn, margin_date) if margin_date else
-            {"date": None, "summary": None, "rankings": {}, "groups": {}}}
+            "margin_data": margin_data,
+            "stock_profiles": load_stock_profiles()}
 
 
 def main():

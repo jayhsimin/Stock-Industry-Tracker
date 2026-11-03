@@ -64,6 +64,17 @@ CHIP_DATASETS = [
         "date_is_roc": True,
         "key_cols": ["權證代號", "iso_date"],
     },
+    {
+        # 上市股票除權除息預告表 - Date here is the SCHEDULED ex-rights/
+        # ex-dividend date itself (near-future), not a report/publish date -
+        # see CLAUDE.md. Only ~50 rows at a time (rolling near-term window).
+        "name": "ex_dividend_schedule",
+        "table": "ex_dividend_schedule",
+        "url": f"{OPENAPI_BASE}/exchangeReport/TWT48U_ALL",
+        "date_field": "Date",
+        "date_is_roc": True,
+        "key_cols": ["Code", "iso_date"],
+    },
 ]
 
 # --- TPEx (上櫃) field-name maps: source key -> target key, matching the
@@ -131,6 +142,18 @@ FIN_STATEMENT_TPEX_MAP = {
 WARRANT_TRADING_TPEX_MAP = {
     "成交數量": "成交張數",
 }
+EX_DIVIDEND_TPEX_MAP = {
+    "ExRrightsExDividendDate": "Date", "SecuritiesCompanyCode": "Code",
+    "CompanyName": "Name", "ExRrightsExDividend": "Exdividend",
+    "StockDividendRatio": "StockDividendRatio",
+    "SubscriptionRatioToNewSharesIssued": "SubscriptionRatio",
+    "SubscriptionPricePerShare": "SubscriptionPricePerShare",
+    "CashDividend": "CashDividend",
+    "AllocatedForPublicUnderwriting": "SharesOffered",
+    "SubscribedByEmployees": "SharesEmpOwner",
+    "SubscribedByExistingShareholders": "SharesholderOwner",
+    "SubscribedProRataInThousandShares": "StockHoldingRatio",
+}
 
 TPEX_CHIP_DATASETS = [
     {
@@ -180,6 +203,17 @@ TPEX_CHIP_DATASETS = [
         "key_cols": ["權證代號", "iso_date"],
         "remap": (WARRANT_TRADING_TPEX_MAP, "partial"),
     },
+    {
+        # TPEx field names differ from TWSE's TWT48U_ALL entirely (English,
+        # different names) - full remap needed, see EX_DIVIDEND_TPEX_MAP.
+        "name": "ex_dividend_schedule_tpex",
+        "table": "ex_dividend_schedule",
+        "url": f"{TPEX_BASE}/tpex_exright_prepost",
+        "date_field": "Date",
+        "date_is_roc": True,
+        "key_cols": ["Code", "iso_date"],
+        "remap": (EX_DIVIDEND_TPEX_MAP, "full"),
+    },
 ]
 
 # --- 基本面 (fundamentals) --------------------------------------------------
@@ -213,6 +247,42 @@ FUNDAMENTAL_DATASETS = [
         "url": f"{OPENAPI_BASE}/opendata/t187ap37_L",
         "date_field": None,
         "key_cols": ["權證代號"],
+    },
+    {
+        # 股東常(臨時)會 開會日期/地點 - 公司代號+股東常(臨時)會+開會日期 as the key
+        # since a company can have both a 常會 and a 臨時會 (or more than one
+        # 臨時會) in the same batch, each with its own date.
+        "name": "shareholder_meetings",
+        "table": "shareholder_meetings",
+        "url": f"{OPENAPI_BASE}/opendata/t187ap41_L",
+        "date_field": "開會日期",
+        "date_is_roc": True,
+        "key_cols": ["公司代號", "股東常(臨時)會", "開會日期"],
+    },
+    {
+        # 上市個股年成交資訊 - THIS YEAR's annual high/low/avg price per
+        # stock (confirmed 2026-11: all 72048 rows in one fetch were Year
+        # "114" - every TWSE-ever-traded security's CURRENT year, not
+        # multi-year history per stock). Same snapshot-only, look-ahead-bias-
+        # risk pattern as monthly_revenue - real multi-year depth only
+        # builds up as fetch_daily.py actually runs across real calendar
+        # years. Still strictly better than stock_price's own thin history
+        # for "this year's high/low" today. TWSE-only, no TPEx equivalent found.
+        "name": "annual_trading_stats",
+        "table": "annual_trading_stats",
+        "url": f"{OPENAPI_BASE}/exchangeReport/FMNPTK_ALL",
+        "date_field": None,
+        "key_cols": ["Code", "Year"],
+    },
+    {
+        # 上市個股月成交資訊 - same snapshot-only pattern, THIS MONTH only
+        # (confirmed: all 37147 rows were Month "11510") - not a rolling
+        # multi-month window. TWSE-only, no TPEx equivalent found.
+        "name": "monthly_trading_stats",
+        "table": "monthly_trading_stats",
+        "url": f"{OPENAPI_BASE}/exchangeReport/FMSRFK_ALL",
+        "date_field": None,
+        "key_cols": ["Code", "Month"],
     },
 ]
 
@@ -261,6 +331,15 @@ TPEX_FUNDAMENTAL_DATASETS = [
         "url": f"{TPEX_BASE}/mopsfin_t187ap37_O",
         "date_field": None,
         "key_cols": ["權證代號"],
+    },
+    {
+        # already Chinese field names identical to TWSE's t187ap41_L - no remap needed
+        "name": "shareholder_meetings_tpex",
+        "table": "shareholder_meetings",
+        "url": f"{TPEX_BASE}/t187ap41_O",
+        "date_field": "開會日期",
+        "date_is_roc": True,
+        "key_cols": ["公司代號", "股東常(臨時)會", "開會日期"],
     },
 ]
 

@@ -8,6 +8,7 @@ __pycache__/
 dashboard.html
 dashboard_push.json
 ma_cache.json
+stock_profiles_cache.json
 volume_alert_state.json
 *.log
 .claude/

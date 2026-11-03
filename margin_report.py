@@ -143,6 +143,156 @@ def aggregate_groups(rows, membership):
     return result
 
 
+def pick_latest_usable_date(conn, max_lookback=10):
+    """margin_trading's own MAX(iso_date) can have ZERO rows joinable
+    against stock_price even though both tables have plenty of rows for
+    that date - confirmed 2026-11: a flaky TPEx stock_price fetch that day
+    left stock_price with TWSE-only rows for one date while margin_trading
+    had TPEx-only rows for it (TWSE's legacy MI_MARGN has no embedded date
+    and gets stamped with the run date, while TPEx's margin endpoint
+    carries its own embedded date - the two markets can end up dated a day
+    apart after a partial/failed run), so TWSE-code stock_price rows never
+    match TPEx-code margin_trading rows for that date and the join is
+    empty. Walks margin_trading's distinct dates newest-first and returns
+    the first one that actually has >0 joinable rows, instead of blindly
+    trusting MAX(iso_date) and silently returning no data for the whole
+    融資融券 tab."""
+    dates = [r[0] for r in conn.execute(
+        "SELECT DISTINCT iso_date FROM margin_trading ORDER BY iso_date DESC LIMIT ?", (max_lookback,)
+    )]
+    for d in dates:
+        n = conn.execute(
+            'SELECT COUNT(*) FROM margin_trading mt '
+            'INNER JOIN stock_price sp ON mt."股票代號" = sp.Code AND sp.iso_date = mt.iso_date '
+            "WHERE mt.iso_date = ?", (d,),
+        ).fetchone()[0]
+        if n > 0:
+            return d
+    return dates[0] if dates else None
+
+
+MARKET_HISTORY_SQL = """
+    SELECT mt.iso_date,
+           SUM({margin}) AS total_margin_lots,
+           SUM({short}) AS total_short_lots
+    FROM margin_trading mt
+    INNER JOIN company_info ci ON mt."股票代號" = ci."公司代號"
+    GROUP BY mt.iso_date
+    ORDER BY mt.iso_date ASC
+""".format(margin=_num('融資今日餘額'), short=f"COALESCE({_num('融券今日餘額')}, 0)")
+
+
+MARKET_HISTORY_PER_STOCK_SQL = """
+    SELECT mt."股票代號", {margin}, {short}
+    FROM margin_trading mt
+    INNER JOIN company_info ci ON mt."股票代號" = ci."公司代號"
+    WHERE mt.iso_date = ?
+""".format(margin=_num('融資今日餘額'), short=f"COALESCE({_num('融券今日餘額')}, 0)")
+
+
+def _stock_call_distances(conn):
+    """{code: stock_profile.margin_call_distance(...) result} computed from
+    EACH STOCK'S OWN latest close price (stock_price) and its
+    monthly_trading_stats basis - the fixed "today's risk" half of the
+    market-wide 斷頭風險 series below. Imports stock_profile rather than
+    reimplementing the same formula a second time.
+
+    Deliberately does NOT filter to one shared as_of_date (confirmed
+    2026-11: a single stock_price date can be entirely TWSE-origin or
+    entirely TPEx-origin depending on which market's fetch happened to run
+    that day - same root cause as pick_latest_usable_date's docstring - so
+    picking one date here, e.g. pick_latest_usable_date()'s choice, zeroed
+    out EVERY result because that particular date's stock_price rows were
+    all TPEx while monthly_trading_stats is TWSE-only). Per-stock MAX
+    (iso_date) is the same approach stock_profile.current_price_and_
+    valuation() already uses and sidesteps the whole-market date-alignment
+    problem entirely."""
+    import stock_profile
+
+    rows = conn.execute(
+        'SELECT sp.Code, CAST(NULLIF(sp."ClosingPrice",\'\') AS REAL), '
+        '       CAST(NULLIF(mts."WeightedAvgPriceAB",\'\') AS REAL) '
+        'FROM stock_price sp '
+        'INNER JOIN company_info ci ON sp.Code = ci."公司代號" '
+        'INNER JOIN (SELECT Code, MAX(iso_date) AS max_date FROM stock_price GROUP BY Code) latest '
+        '    ON sp.Code = latest.Code AND sp.iso_date = latest.max_date '
+        'LEFT JOIN monthly_trading_stats mts ON sp.Code = mts.Code'
+    ).fetchall()
+    out = {}
+    for code, close, basis in rows:
+        dist = stock_profile.margin_call_distance(close, basis)
+        if dist:
+            out[code] = dist
+    return out
+
+
+def build_market_history(conn, max_dates=120):
+    """Market-wide 融資/融券 totals (in 張, no NT$) for EVERY margin_trading
+    date, not just ones with a usable stock_price join, PLUS a lot-weighted
+    average 斷頭風險 (distance-to-margin-call) series - powers the 全市場
+    融資融券概況 card's historical trend chart.
+
+    The 張-count totals deliberately do NOT join stock_price the way
+    build_margin_data/fetch_rows does: margin_trading genuinely supports
+    historical --date backfills (see CLAUDE.md), but STOCK_DAY_ALL/
+    BWIBBU_ALL do NOT - a `fetch_daily.py --date <past>` run fills in
+    margin_trading for that date while leaving stock_price at 0 rows for it
+    (confirmed 2026-11: 13 of 19 margin_trading dates have zero matching
+    stock_price rows). Requiring that join would reduce this chart to ~4
+    points instead of the ~19 margin_trading actually has.
+
+    avg_margin_distance_pct/avg_short_distance_pct are a deliberate HYBRID,
+    not a true historical backtest: each stock's own distance-to-call
+    (stock_profile.margin_call_distance) is computed ONCE from TODAY's
+    close price and this month's weighted-average basis (twstock.db has no
+    usable historical close price for most dates, and monthly_trading_stats
+    is itself a single-period snapshot, not a per-date series - there is no
+    "what was this stock's distance to call on 2026-10-01" to compute).
+    What DOES vary by historical date is which stocks were carrying how
+    much margin/short balance (margin_trading's backfill is real), so each
+    date's point is TODAY's fixed per-stock distances re-weighted by THAT
+    DATE's actual 張 balance mix - i.e. "given today's prices, how would
+    the market's aggregate margin-call exposure have looked as balance
+    composition shifted across stocks over time," not "what the real risk
+    was back then." Label this in the UI; don't present it as a true
+    backtest."""
+    rows = conn.execute(MARKET_HISTORY_SQL).fetchall()
+    distances = _stock_call_distances(conn)
+
+    out = []
+    for iso_date, margin_lots, short_lots in rows[-max_dates:]:
+        if margin_lots is None:
+            continue
+        short_lots = short_lots or 0.0
+        point = {
+            "date": iso_date,
+            "total_margin_lots": round(margin_lots),
+            "total_short_lots": round(short_lots),
+            "market_short_margin_ratio": round(short_lots / margin_lots, 4) if margin_lots else None,
+            "avg_margin_distance_pct": None,
+            "avg_short_distance_pct": None,
+        }
+        if distances:
+            per_stock = conn.execute(MARKET_HISTORY_PER_STOCK_SQL, (iso_date,)).fetchall()
+            m_num = m_den = s_num = s_den = 0.0
+            for code, margin_bal, short_bal in per_stock:
+                dist = distances.get(code)
+                if not dist:
+                    continue
+                if margin_bal:
+                    m_num += margin_bal * dist["margin_distance_pct"]
+                    m_den += margin_bal
+                if short_bal:
+                    s_num += short_bal * dist["short_distance_pct"]
+                    s_den += short_bal
+            if m_den:
+                point["avg_margin_distance_pct"] = round(m_num / m_den, 2)
+            if s_den:
+                point["avg_short_distance_pct"] = round(s_num / s_den, 2)
+        out.append(point)
+    return out
+
+
 def build_margin_data(conn, iso_date, top_n=15):
     """Full 融資融券 tab payload: market-wide totals + bull/bear tilt,
     stock-level rankings, and concept/industry group aggregation. Returns
@@ -202,13 +352,14 @@ def build_margin_data(conn, iso_date, top_n=15):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--date", default=None, help="ISO date, default: latest available in margin_trading")
+    parser.add_argument("--date", default=None,
+                         help="ISO date, default: latest margin_trading date with usable stock_price overlap")
     parser.add_argument("--db", default=db.DB_PATH)
     parser.add_argument("--top", type=int, default=10)
     args = parser.parse_args()
 
     conn = sqlite3.connect(args.db)
-    iso_date = args.date or conn.execute("SELECT MAX(iso_date) FROM margin_trading").fetchone()[0]
+    iso_date = args.date or pick_latest_usable_date(conn)
     data = build_margin_data(conn, iso_date, top_n=args.top)
     conn.close()
 

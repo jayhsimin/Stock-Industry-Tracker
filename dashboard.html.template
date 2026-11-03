@@ -490,6 +490,90 @@
     .history-row { flex-wrap: wrap; }
     .history-row .date { width: auto; }
   }
+
+  .profile-search { position: relative; max-width: 420px; margin-bottom: 18px; }
+  .profile-search input {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: 0.95rem;
+    padding: 10px 36px 10px 14px; border-radius: var(--radius-s); border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-primary); cursor: pointer;
+  }
+  .profile-search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .profile-search::after {
+    content: "▾"; position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+    color: var(--text-muted); font-size: 0.8rem; pointer-events: none;
+  }
+  .profile-suggestions {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-s);
+    max-height: 320px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  }
+  .profile-suggestions div {
+    padding: 9px 14px; cursor: pointer; font-size: 0.9rem; color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
+  }
+  .profile-suggestions div:last-child { border-bottom: none; }
+  .profile-suggestions div:hover, .profile-suggestions div.active { background: var(--accent-weak); }
+  .profile-suggestions .sub { color: var(--text-muted); font-size: 0.8rem; margin-left: 6px; }
+  .profile-header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .profile-header h2 { margin: 0; }
+  .profile-header .tag {
+    font-size: 0.78rem; padding: 2px 9px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-secondary);
+  }
+  .profile-meta { color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px; }
+  .profile-section-title {
+    font-size: 0.95rem; font-weight: 600; color: var(--text-primary);
+    margin: 22px 0 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .profile-section-title:first-of-type { margin-top: 4px; }
+  .calendar-tag {
+    font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; font-weight: 600;
+  }
+  .calendar-tag.upcoming { background: var(--up-weak); color: var(--up); }
+  .calendar-tag.past { background: var(--surface-2); color: var(--text-muted); }
+
+  .margin-chart-card { margin: 10px 0 24px; }
+  .margin-chart-wrap, .market-chart-wrap { position: relative; }
+  .margin-chart-wrap svg, .market-chart-wrap svg { display: block; width: 100%; }
+  .margin-focus-axis text, .margin-context-axis text {
+    fill: var(--text-muted); font-size: 0.72rem; font-family: "IBM Plex Mono", monospace;
+  }
+  .margin-focus-axis path, .margin-focus-axis line,
+  .margin-context-axis path, .margin-context-axis line { stroke: var(--border); }
+  .margin-focus-gridline { stroke: var(--border); stroke-dasharray: 2,3; }
+  .margin-focus-line { fill: none; stroke: var(--accent); stroke-width: 2px; }
+  .margin-context-area { fill: var(--accent); opacity: 0.18; }
+  .margin-context-line { fill: none; stroke: var(--accent); stroke-width: 1px; opacity: 0.6; }
+  .margin-brush .selection { fill: var(--accent); fill-opacity: 0.12; stroke: var(--accent); }
+  .margin-brush .handle { fill: var(--accent); }
+  .margin-crosshair-line { stroke: var(--text-muted); stroke-width: 1px; stroke-dasharray: 3,3; pointer-events: none; }
+  .margin-crosshair-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5px; pointer-events: none; }
+  .margin-tooltip {
+    position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-s); padding: 6px 10px; font-size: 0.78rem; color: var(--text-primary);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.14); white-space: nowrap; display: none;
+  }
+  .margin-tooltip .t-date { color: var(--text-muted); margin-bottom: 2px; }
+  .margin-empty-hint { color: var(--text-muted); font-size: 0.8rem; margin-top: 6px; }
+
+  .chart-explainer {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-s);
+    margin-top: 14px; overflow: hidden;
+  }
+  .chart-explainer-item { background: var(--surface-2); padding: 11px 14px; }
+  .chart-explainer-label {
+    font-size: 0.72rem; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px;
+  }
+  .chart-explainer-body { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.55; }
+  .chart-explainer-body code {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; color: var(--text-primary);
+    background: var(--surface); padding: 1px 5px; border-radius: 4px;
+  }
+  @media (max-width: 640px) {
+    .chart-explainer { grid-template-columns: 1fr; }
+  }
 </style>
 
 <div class="page">
@@ -508,6 +592,7 @@
     <button type="button" role="tab" aria-pressed="false" data-page="decisions">交易決策</button>
     <button type="button" role="tab" aria-pressed="false" data-page="ma">均線總覽</button>
     <button type="button" role="tab" aria-pressed="false" data-page="margin">融資融券</button>
+    <button type="button" role="tab" aria-pressed="false" data-page="profile">個股基本面</button>
   </div>
 
   <div id="view-radar">
@@ -533,6 +618,7 @@
         環越單一顏色代表整個族群同向移動，環被分成兩色代表只有部分個股在動，跟中位數不一致時要特別留意。</p>
       <svg id="bubble-svg" role="img" aria-label="題材漲跌幅泡泡圖"></svg>
       <div id="table-view" class="table-wrap" style="display:none"></div>
+      <div id="radar-chart-explainer"></div>
     </div>
   </div>
 
@@ -601,6 +687,30 @@
       <div id="margin-group-table" class="table-wrap"></div>
     </div>
   </div>
+
+  <div id="view-profile" style="display:none">
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2>全市場融資融券概況</h2>
+      </div>
+      <div id="profile-market-overview"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-caption">
+        <h2>個股基本面查詢</h2>
+      </div>
+      <p class="chart-note" id="profile-cache-note"></p>
+      <div class="profile-search">
+        <input type="text" id="profile-search-input" placeholder="輸入股票代號或名稱，例如 2330 或 台積電"
+               autocomplete="off" spellcheck="false">
+        <div id="profile-suggestions" class="profile-suggestions" style="display:none"></div>
+      </div>
+      <div id="profile-empty" class="empty-note">輸入代號或名稱查詢個股的基本面資料 - 財報、股利、營收、
+        EPS、目前本益比、股東會/除權息行事曆、歷史價格區間，依分類整理。</div>
+      <div id="profile-content" style="display:none"></div>
+    </div>
+  </div>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -637,6 +747,20 @@
   }
   function arrow(v) { return v > 0 ? "▲" : v < 0 ? "▼" : "‒"; }
   function dirClass(v) { return v > 0 ? "up" : v < 0 ? "down" : ""; }
+
+  // shared by every chart on the dashboard: a 資料內容/公式/代表意義 box
+  // right under the chart, so a reader never has to guess what's plotted,
+  // how it was computed, or how to read the result.
+  function chartExplainerHtml(dataDesc, formula, meaning) {
+    return '<div class="chart-explainer">'
+      + '<div class="chart-explainer-item"><div class="chart-explainer-label">資料內容</div>'
+      + '<div class="chart-explainer-body">' + dataDesc + '</div></div>'
+      + '<div class="chart-explainer-item"><div class="chart-explainer-label">公式</div>'
+      + '<div class="chart-explainer-body">' + formula + '</div></div>'
+      + '<div class="chart-explainer-item"><div class="chart-explainer-label">代表意義</div>'
+      + '<div class="chart-explainer-body">' + meaning + '</div></div>'
+      + '</div>';
+  }
 
   function groupList(key) {
     var obj = DATA[key];
@@ -882,10 +1006,19 @@
 
   function render() {
     var list = groupList(mode);
+    var modeLabel = mode === "concepts" ? "自建題材（concept_map 手動分類）" : "官方產業（industry_map，來自月營收申報）";
     document.getElementById("chart-title").textContent =
       (mode === "concepts" ? "自建題材" : "官方產業") + " · 依中位數漲跌幅排序，泡泡大小 = 漲跌幅度";
     renderKpis(list);
     if (tableMode) { renderTableView(list); } else { renderBubbles(list); }
+    document.getElementById("radar-chart-explainer").innerHTML = chartExplainerHtml(
+      "每個分類（" + modeLabel + "）底下每檔成分股最新一筆收盤價與當日漲跌幅（%），"
+        + "來自 <code>stock_price</code> 的 ClosingPrice/Change。",
+      "泡泡大小／中位數漲跌幅 = <code>MEDIAN(成分股當日漲跌%)</code>，用中位數不用平均值，"
+        + "避免單一檔漲停/跌停把整個分類拉動；外環比例 = <code>上漲家數 : 下跌家數</code>。",
+      "泡泡越大代表該分類當天整體波動越明顯，顏色代表漲（紅）跌（綠，台股慣例）。外環同色表示成分股同向移動，"
+        + "外環混色則只有部分個股在動，此時中位數不一定能代表多數成分股的實際表現，點進去看個股明細比較準。"
+    );
   }
 
   document.querySelectorAll('.segmented button').forEach(function (btn) {
@@ -1092,6 +1225,19 @@
     return v == null ? "—" : v.toFixed(1) + "%";
   }
 
+  // shared by the 融資融券 tab's own summary and the 個股基本面 tab's
+  // "全市場融資融券概況" overview, so both always agree with each other.
+  function marketMarginTiles(s) {
+    return [
+      { label: "全市場融資餘額", value: fmtNtdBillions(s.total_margin_ntd),
+        sub: fmtLots(s.margin_change_lots) + " 張", cls: s.margin_change_lots >= 0 ? "up" : "down" },
+      { label: "全市場融券餘額", value: fmtNtdBillions(s.total_short_ntd),
+        sub: fmtLots(s.short_change_lots) + " 張", cls: s.short_change_lots >= 0 ? "up" : "down" },
+      { label: "市場資券比", value: fmtRatio(s.market_short_margin_ratio), sub: "融券/融資（張數）" },
+      { label: "納入統計檔數", value: s.n_stocks + " 檔", sub: "" }
+    ];
+  }
+
   function renderMarginKpis() {
     var m = DATA.margin_data || {};
     var s = m.summary;
@@ -1105,14 +1251,7 @@
     }
     note.textContent = "資料日期：" + m.date + "（TWSE/TPEx 收盤後才公布，盤中無法即時更新；"
       + "已排除權證/ETF/債券，僅計 " + s.n_stocks + " 檔一般上市櫃公司）";
-    var tiles = [
-      { label: "全市場融資餘額", value: fmtNtdBillions(s.total_margin_ntd),
-        sub: fmtLots(s.margin_change_lots) + " 張", cls: s.margin_change_lots >= 0 ? "up" : "down" },
-      { label: "全市場融券餘額", value: fmtNtdBillions(s.total_short_ntd),
-        sub: fmtLots(s.short_change_lots) + " 張", cls: s.short_change_lots >= 0 ? "up" : "down" },
-      { label: "市場資券比", value: fmtRatio(s.market_short_margin_ratio), sub: "融券/融資（張數）" },
-      { label: "納入統計檔數", value: s.n_stocks + " 檔", sub: "" }
-    ];
+    var tiles = marketMarginTiles(s);
     row.innerHTML = "";
     tiles.forEach(function (t) {
       var el = document.createElement("div");
@@ -1202,6 +1341,660 @@
     });
   });
 
+  // --- 個股基本面 tab: per-company fundamentals (financials, dividends,
+  // revenue, EPS, current PE, shareholder-meeting/ex-dividend calendar,
+  // annual/monthly price range), embedded as DATA.stock_profiles via
+  // build_stock_profiles_cache.py's cache (stock_profile.py's queries) -
+  // not recomputed live, same reasoning as ma_table.
+  var profileIndex = [];
+  var profileSuggestIdx = -1;
+
+  function buildProfileIndex() {
+    var profiles = (DATA.stock_profiles && DATA.stock_profiles.profiles) || {};
+    profileIndex = Object.keys(profiles).map(function (code) {
+      var p = profiles[code];
+      var c = p && p.company || {};
+      return { code: code, name: c["公司簡稱"] || c["公司名稱"] || code, profile: p };
+    });
+  }
+
+  function fmtProfileNum(v) {
+    if (v === null || v === undefined || v === "") return "—";
+    var n = Number(v);
+    return isNaN(n) ? v : n.toLocaleString();
+  }
+  function fmtProfilePct(v) {
+    if (v === null || v === undefined || v === "") return "—";
+    var n = Number(v);
+    return isNaN(n) ? "—" : fmtPct(n);
+  }
+
+  function renderProfileSuggestions(matches) {
+    var el = document.getElementById("profile-suggestions");
+    profileSuggestIdx = -1;
+    if (!matches.length) { el.style.display = "none"; el.innerHTML = ""; return; }
+    el.innerHTML = matches.map(function (m) {
+      return '<div data-code="' + m.code + '">' + m.name + '<span class="sub">' + m.code + '</span></div>';
+    }).join("");
+    el.style.display = "block";
+    el.querySelectorAll("div").forEach(function (row) {
+      row.addEventListener("click", function () { selectProfile(row.getAttribute("data-code")); });
+    });
+  }
+
+  function selectProfile(code) {
+    var entry = profileIndex.find(function (m) { return m.code === code; });
+    document.getElementById("profile-suggestions").style.display = "none";
+    if (!entry) return;
+    document.getElementById("profile-search-input").value = entry.name + "（" + entry.code + "）";
+    renderProfileContent(entry.profile);
+  }
+
+  function profileSection(title) {
+    return '<div class="profile-section-title">' + title + '</div>';
+  }
+
+  function kpiTile(label, value, subHtml) {
+    return '<div class="kpi"><div class="kpi-label">' + label + '</div><div class="kpi-value">' + value + '</div>'
+      + (subHtml || "") + '</div>';
+  }
+
+  function marginDeltaSub(curr, prevVal, decimals, suffix) {
+    if (curr == null || prevVal == null) return "";
+    var diff = curr - prevVal;
+    if (Math.abs(diff) < Math.pow(10, -decimals) / 2) return '<div class="kpi-sub">持平（較前一交易日）</div>';
+    var cls = diff > 0 ? "up" : "down";
+    return '<div class="kpi-sub ' + cls + '">' + (diff > 0 ? "+" : "") + diff.toFixed(decimals) + (suffix || "")
+      + ' 較前一交易日</div>';
+  }
+
+  function renderMarginSummaryHtml(p) {
+    var mh = p.margin_history || [];
+    if (!mh.length) {
+      return profileSection("融資融券狀況") +
+        '<div class="empty-note">尚無融資融券歷史資料（margin_trading 可能還沒針對此股票累積資料）</div>';
+    }
+    var latest = mh[mh.length - 1];
+    var prev = mh.length > 1 ? mh[mh.length - 2] : null;
+    var html = profileSection("融資融券狀況（" + latest.date + "　累積 " + mh.length + " 個交易日歷史）");
+    html += '<div class="kpi-row">'
+      + kpiTile("融資餘額(張)", latest.margin_balance_lots.toLocaleString(),
+          prev ? marginDeltaSub(latest.margin_balance_lots, prev.margin_balance_lots, 0, "") : "")
+      + kpiTile("融券餘額(張)", latest.short_balance_lots.toLocaleString(),
+          prev ? marginDeltaSub(latest.short_balance_lots, prev.short_balance_lots, 0, "") : "")
+      + kpiTile("資券比", latest.short_margin_ratio != null ? latest.short_margin_ratio : "—",
+          prev ? marginDeltaSub(latest.short_margin_ratio, prev.short_margin_ratio, 4, "") : "")
+      + kpiTile("融資使用率", latest.margin_usage_pct != null ? latest.margin_usage_pct + "%" : "—",
+          prev ? marginDeltaSub(latest.margin_usage_pct, prev.margin_usage_pct, 2, "%") : "")
+      + '</div>';
+
+    var mc = p.margin_call;
+    if (mc) {
+      html += '<div class="kpi-row">'
+        + kpiTile("估計融資斷頭價", mc.margin_call_price,
+            '<div class="kpi-sub ' + (mc.margin_distance_pct < 0 ? "up" : "") + '">現價距此 '
+            + (mc.margin_distance_pct >= 0 ? "+" : "") + mc.margin_distance_pct.toFixed(2) + "%"
+            + (mc.margin_distance_pct < 0 ? "（已跌破）" : "") + '</div>')
+        + kpiTile("估計融券斷頭價", mc.short_call_price,
+            '<div class="kpi-sub ' + (mc.short_distance_pct < 0 ? "up" : "") + '">現價距此 '
+            + (mc.short_distance_pct >= 0 ? "+" : "") + mc.short_distance_pct.toFixed(2) + "%"
+            + (mc.short_distance_pct < 0 ? "（已漲破）" : "") + '</div>')
+        + '</div>';
+      html += '<p class="margin-empty-hint">估計斷頭價 = 本月加權均價（' + mc.basis_price + '，當作目前在外融資/融券部位的概略成本）'
+        + ' × (1 − 22% 融資 / 1 + 46% 融券)。這兩個百分比是概略經驗值，不是TWSE/TPEx公布的個股實際融資成數/融券保證金成數'
+        + '（每檔不同，此資料來源沒有提供），僅供概算參考，不是精確的維持率數字。</p>';
+    } else {
+      html += '<div class="empty-note">無法估算斷頭距離（缺少本月加權均價或現價 - TPEx股票或剛上市個股常見此情況）</div>';
+    }
+
+    html += '<div class="segmented" role="tablist" aria-label="歷史走勢指標" style="margin:4px 0 10px">'
+      + '<button type="button" role="tab" aria-pressed="true" data-margin-metric="short_margin_ratio">資券比</button>'
+      + '<button type="button" role="tab" aria-pressed="false" data-margin-metric="margin_usage_pct">融資使用率</button>'
+      + '<button type="button" role="tab" aria-pressed="false" data-margin-metric="margin_balance_lots">融資餘額(張)</button>'
+      + '<button type="button" role="tab" aria-pressed="false" data-margin-metric="short_balance_lots">融券餘額(張)</button>'
+      + '</div>';
+    html += '<div class="margin-chart-card">'
+      + '<div class="margin-chart-wrap"><svg id="margin-focus-svg"></svg><div id="margin-tooltip" class="margin-tooltip"></div></div>'
+      + '<svg id="margin-context-svg"></svg>'
+      + '<p class="margin-empty-hint">下方灰色區為完整歷史範圍 - 拖曳或縮放選取範圍即可放大查看任意區間，' +
+        '預設只顯示近期；放大選取範圍即可一路看到最早的資料。</p>'
+      + '<div id="margin-chart-explainer"></div>'
+      + '</div>';
+    return html;
+  }
+
+  // --- generic focus+context brush history chart (d3), shared by the
+  // 個股基本面 tab's per-stock 融資融券 chart AND the 全市場融資融券概況
+  // card's market-wide chart - the context strip always shows the FULL
+  // history at a glance; dragging/resizing the brush there zooms the focus
+  // chart above it into any range, all the way back to the earliest data
+  // point. Default brush = most recent ~30 points (or everything, if there
+  // isn't 30 yet). opts: {focusSel, contextSel, tooltipId, wrapSel, data,
+  // metricKey, metric} - metric is {label, decimals, suffix}.
+  function drawHistoryChart(opts) {
+    var focusSvg = d3.select(opts.focusSel);
+    var contextSvg = d3.select(opts.contextSel);
+    if (focusSvg.empty() || contextSvg.empty()) return;
+    focusSvg.selectAll("*").remove();
+    contextSvg.selectAll("*").remove();
+
+    var metric = opts.metric;
+    var metricKey = opts.metricKey;
+    var points = opts.data
+      .map(function (d) { return { date: new Date(d.date), value: d[metricKey], raw: d }; })
+      .filter(function (d) { return d.value !== null && d.value !== undefined && !isNaN(d.date.getTime()); });
+
+    // explainer box updates with whichever metric is currently selected,
+    // since each one has its own formula/meaning - not just rendered once.
+    if (opts.explainerSel && metric.dataDesc) {
+      var explainerEl = document.querySelector(opts.explainerSel);
+      if (explainerEl) explainerEl.innerHTML = chartExplainerHtml(metric.dataDesc, metric.formula, metric.meaning);
+    }
+
+    var wrap = document.querySelector(opts.wrapSel);
+    var width = (wrap && wrap.getBoundingClientRect().width) || 600;
+    var L = 48, R = 16;
+
+    if (points.length < 2) {
+      focusSvg.attr("viewBox", "0 0 " + width + " 80");
+      focusSvg.append("text").attr("x", width / 2).attr("y", 40).attr("text-anchor", "middle")
+        .attr("fill", "var(--text-muted)").attr("font-size", "0.82rem")
+        .text(metric.label + "：資料點不足，無法繪圖");
+      contextSvg.attr("viewBox", "0 0 " + width + " 1");
+      return;
+    }
+
+    var focusH = 240, focusTop = 10, focusBottom = 28;
+    var ctxH = 56, ctxTop = 4, ctxBottom = 18;
+
+    // Zoom to the data's own range rather than forcing a 0 baseline - a
+    // metric that sits far from zero with small day-to-day swings (e.g.
+    // 平均距斷頭% hovering around 15) renders as an invisible flat line
+    // against a 0-based axis; the real variation only becomes visible once
+    // the axis is scaled to where the data actually lives. Axis ticks
+    // still show the real numbers, so this isn't hiding anything - it's
+    // the same reason a stock price chart doesn't start at $0.
+    function paddedYDomain(values) {
+      var ext = d3.extent(values);
+      if (ext[0] == null) return [0, 1];
+      var span = ext[1] - ext[0];
+      var pad = span > 0 ? span * 0.12 : Math.max(Math.abs(ext[1]) * 0.08, 1e-6);
+      return [ext[0] - pad, ext[1] + pad];
+    }
+
+    var xExtent = d3.extent(points, function (d) { return d.date; });
+    var yDomainFull = paddedYDomain(points.map(function (d) { return d.value; }));
+
+    var xContext = d3.scaleUtc().domain(xExtent).range([L, width - R]);
+    var yContext = d3.scaleLinear().domain(yDomainFull).range([ctxH - ctxBottom, ctxTop]);
+    var xFocus = d3.scaleUtc().range([L, width - R]);
+    // yFocus's domain is NOT fixed here - redrawFocus() rescales it to
+    // whichever subset of points is currently brushed, so zooming the
+    // brush in also zooms the Y-axis to amplify that range's own variation.
+    var yFocus = d3.scaleLinear().domain(yDomainFull).range([focusH - focusBottom, focusTop]);
+
+    // --- context strip: full history, always visible ---
+    contextSvg.attr("viewBox", "0 0 " + width + " " + ctxH);
+    var areaGen = d3.area().x(function (d) { return xContext(d.date); })
+      .y0(ctxH - ctxBottom).y1(function (d) { return yContext(d.value); });
+    var lineGenCtx = d3.line().x(function (d) { return xContext(d.date); }).y(function (d) { return yContext(d.value); });
+    contextSvg.append("path").datum(points).attr("class", "margin-context-area").attr("d", areaGen);
+    contextSvg.append("path").datum(points).attr("class", "margin-context-line").attr("d", lineGenCtx);
+    contextSvg.append("g").attr("class", "margin-context-axis")
+      .attr("transform", "translate(0," + (ctxH - ctxBottom) + ")")
+      .call(d3.axisBottom(xContext).ticks(Math.min(points.length, 6)).tickFormat(d3.utcFormat("%Y-%m-%d")).tickSizeOuter(0));
+
+    var defaultSpan = Math.min(points.length, 30);
+    var defaultStart = points[points.length - defaultSpan].date;
+    var defaultEnd = points[points.length - 1].date;
+    var defaultPixels = [xContext(defaultStart), xContext(defaultEnd)];
+    if (defaultPixels[1] - defaultPixels[0] < 4) defaultPixels = [L, width - R];
+
+    var brush = d3.brushX().extent([[L, ctxTop], [width - R, ctxH - ctxBottom]]).on("brush end", brushed);
+    var brushG = contextSvg.append("g").attr("class", "margin-brush").call(brush);
+
+    // --- focus chart: zoomed to whatever the brush currently selects ---
+    focusSvg.attr("viewBox", "0 0 " + width + " " + focusH);
+    var gridG = focusSvg.append("g");
+    var axisXG = focusSvg.append("g").attr("class", "margin-focus-axis")
+      .attr("transform", "translate(0," + (focusH - focusBottom) + ")");
+    var axisYG = focusSvg.append("g").attr("class", "margin-focus-axis").attr("transform", "translate(" + L + ",0)");
+    var lineGenFocus = d3.line().x(function (d) { return xFocus(d.date); }).y(function (d) { return yFocus(d.value); });
+    var pathFocus = focusSvg.append("path").attr("class", "margin-focus-line");
+    var crosshairX = focusSvg.append("line").attr("class", "margin-crosshair-line").style("display", "none");
+    var crosshairDot = focusSvg.append("circle").attr("class", "margin-crosshair-dot").attr("r", 3.5).style("display", "none");
+    var overlay = focusSvg.append("rect").attr("fill", "transparent")
+      .attr("x", L).attr("y", focusTop).attr("width", Math.max(width - L - R, 0)).attr("height", focusH - focusTop - focusBottom);
+    var tooltip = document.getElementById(opts.tooltipId);
+    var bisectDate = d3.bisector(function (d) { return d.date; }).left;
+
+    function redrawFocus(visible) {
+      yFocus.domain(paddedYDomain(visible.map(function (d) { return d.value; })));
+      var yAxisTicks = d3.axisLeft(yFocus).ticks(5).tickFormat(function (v) { return metric.decimals === 0 ? v.toLocaleString() : v.toFixed(metric.decimals); });
+      axisYG.call(yAxisTicks);
+      axisXG.call(d3.axisBottom(xFocus).ticks(Math.min(visible.length, 7)).tickFormat(d3.utcFormat("%m/%d")).tickSizeOuter(0));
+      gridG.selectAll("line").data(yFocus.ticks(5)).join("line")
+        .attr("class", "margin-focus-gridline")
+        .attr("x1", L).attr("x2", width - R)
+        .attr("y1", function (v) { return yFocus(v); }).attr("y2", function (v) { return yFocus(v); });
+      pathFocus.datum(visible).attr("d", lineGenFocus);
+    }
+
+    function pointAtX(mouseX) {
+      var x0 = xFocus.invert(mouseX);
+      var domain = xFocus.domain();
+      var visible = points.filter(function (d) { return d.date >= domain[0] && d.date <= domain[1]; });
+      if (!visible.length) return null;
+      var i = bisectDate(visible, x0, 1);
+      var a = visible[i - 1], b = visible[i];
+      if (!a) return b; if (!b) return a;
+      return (x0 - a.date) > (b.date - x0) ? b : a;
+    }
+
+    overlay.on("mousemove", function (event) {
+      var mx = d3.pointer(event, focusSvg.node())[0];
+      var pt = pointAtX(mx);
+      if (!pt) return;
+      var px = xFocus(pt.date), py = yFocus(pt.value);
+      crosshairX.attr("x1", px).attr("x2", px).attr("y1", focusTop).attr("y2", focusH - focusBottom).style("display", "");
+      crosshairDot.attr("cx", px).attr("cy", py).style("display", "");
+      tooltip.style.display = "block";
+      tooltip.innerHTML = '<div class="t-date">' + d3.utcFormat("%Y-%m-%d")(pt.date) + "</div>"
+        + metric.label + "：" + pt.value.toFixed(metric.decimals) + metric.suffix;
+      var wrapBox = wrap.getBoundingClientRect();
+      tooltip.style.left = Math.min(px + 12, wrapBox.width - 140) + "px";
+      tooltip.style.top = Math.max(py - 36, 0) + "px";
+    }).on("mouseleave", function () {
+      crosshairX.style("display", "none");
+      crosshairDot.style("display", "none");
+      tooltip.style.display = "none";
+    });
+
+    function brushed(event) {
+      var selection = (event && event.selection) || defaultPixels;
+      var domain = selection.map(xContext.invert);
+      var visible = points.filter(function (d) { return d.date >= domain[0] && d.date <= domain[1]; });
+      if (visible.length < 2) {
+        // selection too narrow (e.g. a single click, no drag) - fall back to
+        // the full range rather than plotting every point against a domain
+        // too narrow to hold them.
+        xFocus.domain(xExtent);
+        redrawFocus(points);
+        return;
+      }
+      xFocus.domain(domain);
+      redrawFocus(visible);
+    }
+
+    brushG.call(brush.move, defaultPixels);
+  }
+
+  var MARGIN_METRICS = {
+    short_margin_ratio: {
+      label: "資券比", decimals: 4, suffix: "",
+      dataDesc: "該股票每個交易日的融資今日餘額、融券今日餘額（張），來自 <code>margin_trading</code>（TWSE MI_MARGN / TPEx 對應端點）。",
+      formula: "資券比 = <code>融券今日餘額 ÷ 融資今日餘額</code>（張數比）。",
+      meaning: "數字越高，代表放空（融券）相對做多（融資）的槓桿部位越重；上升通常表示空方力道正在增強。"
+    },
+    margin_usage_pct: {
+      label: "融資使用率", decimals: 2, suffix: "%",
+      dataDesc: "該股票每個交易日的融資今日餘額與融資限額（張），來自 <code>margin_trading</code>。",
+      formula: "融資使用率 = <code>融資今日餘額 ÷ 融資限額 × 100%</code>。",
+      meaning: "越接近 100%，代表這檔股票的融資額度越滿，越可能因觸及限額而被迫減碼、或暫停融資買進。"
+    },
+    margin_balance_lots: {
+      label: "融資餘額", decimals: 0, suffix: " 張",
+      dataDesc: "該股票每個交易日的融資今日餘額（張），直接取自 <code>margin_trading</code>，無額外計算。",
+      formula: "不計算，直接呈現原始的 <code>融資今日餘額</code> 欄位。",
+      meaning: "餘額上升代表市場持續用融資加碼做多這檔股票；下降代表減碼或出場（可能是正常獲利了結，也可能是斷頭平倉）。"
+    },
+    short_balance_lots: {
+      label: "融券餘額", decimals: 0, suffix: " 張",
+      dataDesc: "該股票每個交易日的融券今日餘額（張），直接取自 <code>margin_trading</code>，無額外計算。",
+      formula: "不計算，直接呈現原始的 <code>融券今日餘額</code> 欄位。",
+      meaning: "餘額上升代表放空這檔股票的部位持續增加；下降代表回補（可能是正常回補，也可能是軋空被迫回補）。"
+    }
+  };
+  var marginChartState = { data: [], metric: "short_margin_ratio" };
+
+  function drawStockMarginChart() {
+    drawHistoryChart({
+      focusSel: "#margin-focus-svg", contextSel: "#margin-context-svg",
+      tooltipId: "margin-tooltip", wrapSel: ".margin-chart-wrap",
+      explainerSel: "#margin-chart-explainer",
+      data: marginChartState.data, metricKey: marginChartState.metric,
+      metric: MARGIN_METRICS[marginChartState.metric]
+    });
+  }
+
+  function initMarginHistoryChart(mh) {
+    marginChartState.data = mh;
+    marginChartState.metric = "short_margin_ratio";
+    document.querySelectorAll("[data-margin-metric]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        document.querySelectorAll("[data-margin-metric]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+        btn.setAttribute("aria-pressed", "true");
+        marginChartState.metric = btn.getAttribute("data-margin-metric");
+        drawStockMarginChart();
+      });
+    });
+    drawStockMarginChart();
+  }
+
+  var MARKET_METRICS = {
+    market_short_margin_ratio: {
+      label: "市場資券比", decimals: 4, suffix: "",
+      dataDesc: "每個交易日「全部一般上市櫃公司」（已排除權證/ETF/債券）的融資今日餘額、融券今日餘額加總（張），來自 <code>margin_trading</code>。",
+      formula: "市場資券比 = <code>Σ(全市場融券今日餘額) ÷ Σ(全市場融資今日餘額)</code>（張數）。",
+      meaning: "數字越高，代表整體市場放空（融券）相對做多（融資）的槓桿比重越高，是市場多空力道的整體指標。"
+    },
+    total_margin_lots: {
+      label: "全市場融資餘額", decimals: 0, suffix: " 張",
+      dataDesc: "每個交易日「全部一般上市櫃公司」的融資今日餘額加總（張），來自 <code>margin_trading</code>。",
+      formula: "全市場融資餘額 = <code>Σ(每檔股票的融資今日餘額)</code>，不換算金額（張數加總不需要股價）。",
+      meaning: "反映全市場整體用融資（借錢買股）做多的規模，上升代表市場整體槓桿做多的情緒升溫。"
+    },
+    total_short_lots: {
+      label: "全市場融券餘額", decimals: 0, suffix: " 張",
+      dataDesc: "每個交易日「全部一般上市櫃公司」的融券今日餘額加總（張），來自 <code>margin_trading</code>。",
+      formula: "全市場融券餘額 = <code>Σ(每檔股票的融券今日餘額)</code>，不換算金額。",
+      meaning: "反映全市場整體放空的規模，上升代表市場整體看空情緒升溫，也代表潛在軋空動能增加。"
+    },
+    avg_margin_distance_pct: {
+      label: "平均距融資斷頭", decimals: 2, suffix: "%",
+      dataDesc: "每檔股票的「距融資斷頭%」（見個股頁面的估計方式：本月加權均價 × 0.78 當估計斷頭價），"
+        + "用每個歷史交易日「該股票當天的融資今日餘額（張）」當權重做加權平均。",
+      formula: "市場平均距融資斷頭 = <code>Σ(個股距融資斷頭% × 該股當日融資餘額) ÷ Σ(該股當日融資餘額)</code>。"
+        + "個股距融資斷頭% 本身是用「今天」的股價固定算出來的，只有權重（融資餘額）會隨歷史日期變動。",
+      meaning: "數字越低（甚至轉負），代表以今天的價格水準來看，市場融資部位整體越接近被迫斷頭平倉的風險；"
+        + "這是「用今天的價格回頭看歷史部位組合」的概算，不是當時真實的風險回測，僅供參考。"
+    },
+    avg_short_distance_pct: {
+      label: "平均距融券斷頭", decimals: 2, suffix: "%",
+      dataDesc: "每檔股票的「距融券斷頭%」（本月加權均價 × 1.46 當估計斷頭價），用每個歷史交易日「該股票當天的融券今日餘額（張）」當權重做加權平均。",
+      formula: "市場平均距融券斷頭 = <code>Σ(個股距融券斷頭% × 該股當日融券餘額) ÷ Σ(該股當日融券餘額)</code>。"
+        + "個股距融券斷頭% 同樣是用「今天」的股價固定算出來的，只有權重會隨歷史日期變動。",
+      meaning: "數字越低（甚至轉負），代表以今天的價格水準來看，市場融券（放空）部位整體越接近被迫回補（軋空）的風險；"
+        + "同樣是用今天價格回推的概算，不是當時真實風險的回測。"
+    }
+  };
+  var marketChartState = { data: [], metric: "market_short_margin_ratio" };
+
+  function drawMarketMarginChart() {
+    drawHistoryChart({
+      focusSel: "#market-focus-svg", contextSel: "#market-context-svg",
+      tooltipId: "market-tooltip", wrapSel: ".market-chart-wrap",
+      explainerSel: "#market-chart-explainer",
+      data: marketChartState.data, metricKey: marketChartState.metric,
+      metric: MARKET_METRICS[marketChartState.metric]
+    });
+  }
+
+  function initMarketHistoryChart(history) {
+    marketChartState.data = history || [];
+    marketChartState.metric = "market_short_margin_ratio";
+    document.querySelectorAll("[data-market-metric]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        document.querySelectorAll("[data-market-metric]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+        btn.setAttribute("aria-pressed", "true");
+        marketChartState.metric = btn.getAttribute("data-market-metric");
+        drawMarketMarginChart();
+      });
+    });
+    drawMarketMarginChart();
+  }
+
+  function renderProfileContent(p) {
+    document.getElementById("profile-empty").style.display = "none";
+    var el = document.getElementById("profile-content");
+    el.style.display = "";
+    var c = p.company || {};
+    var html = '<div class="profile-header"><h2>' + (c["公司名稱"] || "") + "（" + (c["公司簡稱"] || "") + '）</h2>'
+      + '<span class="tag">' + (c["產業別"] || "未分類") + '</span>'
+      + '<span class="tag">' + c["公司代號"] + '</span></div>'
+      + '<div class="profile-meta">上市日期 ' + (c["上市日期"] || "—") + '　董事長 ' + (c["董事長"] || "—")
+      + '　總經理 ' + (c["總經理"] || "—") + '　實收資本額 ' + fmtProfileNum(c["實收資本額"]) + ' 元</div>';
+
+    html += renderMarginSummaryHtml(p);
+
+    if (p.current) {
+      var cur = p.current;
+      html += profileSection("現價與估值（" + (cur.price_date || cur.valuation_date || "") + "）");
+      html += '<div class="kpi-row">'
+        + kpiTile("現價", fmtProfileNum(cur.close), "")
+        + kpiTile("本益比", cur.pe_ratio != null ? cur.pe_ratio : "—", "")
+        + kpiTile("股價淨值比", cur.pb_ratio != null ? cur.pb_ratio : "—", "")
+        + kpiTile("殖利率", cur.dividend_yield != null ? cur.dividend_yield + "%" : "—", "")
+        + '</div>';
+    }
+
+    if (p.monthly_revenue && p.monthly_revenue.length) {
+      html += profileSection("月營收");
+      html += '<div class="table-wrap"><table class="movers"><thead><tr><th>年月</th>'
+        + '<th class="num">當月營收(千元)</th><th class="num">去年同月增減</th>'
+        + '<th class="num">累計營收(千元)</th><th class="num">累計年增減</th></tr></thead><tbody>';
+      p.monthly_revenue.forEach(function (r) {
+        html += "<tr><td>" + r["資料年月"] + '</td><td class="num">' + fmtProfileNum(r["營業收入-當月營收"])
+          + '</td><td class="num">' + fmtProfilePct(r["營業收入-去年同月增減(%)"])
+          + '</td><td class="num">' + fmtProfileNum(r["累計營業收入-當月累計營收"])
+          + '</td><td class="num">' + fmtProfilePct(r["累計營業收入-前期比較增減(%)"]) + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+
+    if (p.income_statement && p.income_statement.length) {
+      html += profileSection("損益表 / EPS（單位：千元，每股盈餘除外）");
+      html += '<div class="table-wrap"><table class="movers"><thead><tr><th>期別</th>'
+        + '<th class="num">營業收入</th><th class="num">營業利益</th><th class="num">本期淨利</th>'
+        + '<th class="num">EPS(元)</th></tr></thead><tbody>';
+      p.income_statement.forEach(function (r) {
+        html += "<tr><td>" + r["年度"] + "Q" + r["季別"] + '</td><td class="num">' + fmtProfileNum(r["營業收入"])
+          + '</td><td class="num">' + fmtProfileNum(r["營業利益（損失）"])
+          + '</td><td class="num">' + fmtProfileNum(r["本期淨利（淨損）"])
+          + '</td><td class="num">' + (r["基本每股盈餘（元）"] != null ? r["基本每股盈餘（元）"] : "—") + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+
+    if (p.balance_sheet && p.balance_sheet.length) {
+      html += profileSection("資產負債表（單位：千元，每股淨值除外）");
+      html += '<div class="table-wrap"><table class="movers"><thead><tr><th>期別</th>'
+        + '<th class="num">資產總計</th><th class="num">負債總計</th><th class="num">權益總計</th>'
+        + '<th class="num">每股淨值</th></tr></thead><tbody>';
+      p.balance_sheet.forEach(function (r) {
+        html += "<tr><td>" + r["年度"] + "Q" + r["季別"] + '</td><td class="num">' + fmtProfileNum(r["資產總計"])
+          + '</td><td class="num">' + fmtProfileNum(r["負債總計"])
+          + '</td><td class="num">' + fmtProfileNum(r["權益總計"])
+          + '</td><td class="num">' + (r["每股參考淨值"] != null ? r["每股參考淨值"] : "—") + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+
+    if (p.dividends && p.dividends.length) {
+      html += profileSection("股利");
+      html += '<div class="table-wrap"><table class="movers"><thead><tr><th>股利年度</th>'
+        + '<th class="num">現金股利(元/股)</th><th class="num">股票股利(元/股)</th>'
+        + '<th>董事會股利分派日</th></tr></thead><tbody>';
+      p.dividends.forEach(function (r) {
+        html += "<tr><td>" + r["股利年度"] + '</td><td class="num">'
+          + (r["股東配發-盈餘分配之現金股利(元/股)"] || "—") + '</td><td class="num">'
+          + (r["股東配發-盈餘轉增資配股(元/股)"] || "—") + "</td><td>"
+          + (r["董事會（擬議）股利分派日"] || "—") + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+
+    if (p.calendar && p.calendar.length) {
+      html += profileSection("重要行事曆（股東會／除權除息）");
+      html += '<div class="table-wrap"><table class="movers"><thead><tr><th>狀態</th><th>類型</th>'
+        + "<th>日期</th></tr></thead><tbody>";
+      p.calendar.forEach(function (e) {
+        html += '<tr><td><span class="calendar-tag ' + (e.upcoming ? "upcoming" : "past") + '">'
+          + (e.upcoming ? "未來" : "已過") + "</span></td><td>" + e.type + "</td><td>" + (e.date || "—") + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+
+    html += profileSection("歷史價格區間");
+    var pp = p.price_points || { annual: [], monthly: [] };
+    if (pp.annual && pp.annual.length) {
+      html += '<p class="chart-note">僅TWSE上市股票提供；目前資料為最近期（通常是最近一個已結束的完整年度）'
+        + '的年度/月度高低點，尚未累積多年歷史。</p>';
+      html += '<div class="table-wrap"><table class="movers"><thead><tr><th>年度</th>'
+        + '<th class="num">最高價</th><th>最高日</th><th class="num">最低價</th><th>最低日</th>'
+        + '<th class="num">年均價</th></tr></thead><tbody>';
+      pp.annual.forEach(function (r) {
+        html += "<tr><td>" + r["Year"] + '</td><td class="num">' + r["HighestPrice"] + "</td><td>" + r["HDate"]
+          + '</td><td class="num">' + r["LowestPrice"] + "</td><td>" + r["LDate"]
+          + '</td><td class="num">' + r["AvgClosingPrice"] + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+      if (pp.monthly && pp.monthly.length) {
+        html += '<div class="table-wrap"><table class="movers"><thead><tr><th>月份</th>'
+          + '<th class="num">最高價</th><th class="num">最低價</th><th class="num">加權均價</th></tr></thead><tbody>';
+        pp.monthly.forEach(function (r) {
+          html += "<tr><td>" + r["Month"] + '</td><td class="num">' + r["HighestPrice"]
+            + '</td><td class="num">' + r["LowestPrice"] + '</td><td class="num">' + r["WeightedAvgPriceAB"] + "</td></tr>";
+        });
+        html += "</tbody></table></div>";
+      }
+    } else {
+      html += '<div class="empty-note">無資料（此資料集僅TWSE上市股票有提供，TPEx上櫃股票目前沒有對應來源）</div>';
+    }
+
+    el.innerHTML = html;
+    initMarginHistoryChart(p.margin_history || []);
+  }
+
+  function renderProfileMarketOverview() {
+    var el = document.getElementById("profile-market-overview");
+    var m = DATA.margin_data || {};
+    var s = m.summary;
+    var history = m.history || [];
+    var html = "";
+
+    if (!s) {
+      html += '<div class="empty-note">尚無全市場融資融券資料 - 請先執行 <code>python fetch_daily.py</code>'
+        + '（會抓 margin_trading）。</div>';
+    } else {
+      var tiles = marketMarginTiles(s);
+      html += '<p class="chart-note">資料日期：' + m.date + '（TWSE/TPEx 收盤後才公布，盤中無法即時更新；'
+        + '已排除權證/ETF/債券，僅計 ' + s.n_stocks + ' 檔一般上市櫃公司 - 詳細排行/題材分布請見「融資融券」分頁）</p>';
+      html += '<div class="kpi-row">' + tiles.map(function (t) {
+        return kpiTile(t.label, t.value, t.sub ? '<div class="kpi-sub ' + (t.cls || "") + '">' + t.sub + '</div>' : "");
+      }).join("") + '</div>';
+    }
+
+    // 市場平均斷頭距離：取 history 裡最新一個「有算出來」的點（不一定是陣列最後一筆，
+    // 因為個別日期可能剛好全市場資料只有單一市場來源，算不出來 - 見 margin_report.py）
+    var latestCallPoint = null;
+    for (var i = history.length - 1; i >= 0; i--) {
+      if (history[i].avg_margin_distance_pct != null || history[i].avg_short_distance_pct != null) {
+        latestCallPoint = history[i];
+        break;
+      }
+    }
+    if (latestCallPoint) {
+      html += '<div class="kpi-row">'
+        + kpiTile("市場平均距融資斷頭",
+            latestCallPoint.avg_margin_distance_pct != null ? latestCallPoint.avg_margin_distance_pct.toFixed(2) + "%" : "—",
+            '<div class="kpi-sub ' + (latestCallPoint.avg_margin_distance_pct < 0 ? "up" : "") + '">'
+            + latestCallPoint.date + '　張數加權平均</div>')
+        + kpiTile("市場平均距融券斷頭",
+            latestCallPoint.avg_short_distance_pct != null ? latestCallPoint.avg_short_distance_pct.toFixed(2) + "%" : "—",
+            '<div class="kpi-sub ' + (latestCallPoint.avg_short_distance_pct < 0 ? "up" : "") + '">'
+            + latestCallPoint.date + '　張數加權平均</div>')
+        + '</div>';
+      html += '<p class="margin-empty-hint">估計方式跟個股「融資融券狀況」相同（本月加權均價當成本基準，融資跌22%/融券漲46%視為' +
+        '估計斷頭），再用每檔個股目前的融資/融券餘額加權平均成一個市場整體數字 - 僅涵蓋有近期股價與本月均價可查的TWSE上市公司。</p>';
+    }
+
+    if (history.length >= 2) {
+      html += '<div class="segmented" role="tablist" aria-label="全市場歷史走勢指標" style="margin:14px 0 10px">'
+        + '<button type="button" role="tab" aria-pressed="true" data-market-metric="market_short_margin_ratio">市場資券比</button>'
+        + '<button type="button" role="tab" aria-pressed="false" data-market-metric="total_margin_lots">全市場融資餘額(張)</button>'
+        + '<button type="button" role="tab" aria-pressed="false" data-market-metric="total_short_lots">全市場融券餘額(張)</button>'
+        + '<button type="button" role="tab" aria-pressed="false" data-market-metric="avg_margin_distance_pct">平均距融資斷頭</button>'
+        + '<button type="button" role="tab" aria-pressed="false" data-market-metric="avg_short_distance_pct">平均距融券斷頭</button>'
+        + '</div>';
+      html += '<div class="margin-chart-card">'
+        + '<div class="market-chart-wrap"><svg id="market-focus-svg"></svg><div id="market-tooltip" class="margin-tooltip"></div></div>'
+        + '<svg id="market-context-svg"></svg>'
+        + '<p class="margin-empty-hint">張數加總不需要股價換算，所以涵蓋 margin_trading 累積到的每一天（即使那天 stock_price '
+        + '還沒有對應資料）- 下方灰色區為完整歷史範圍，拖曳即可放大任意區間。</p>'
+        + '<div id="market-chart-explainer"></div>'
+        + '</div>';
+    }
+
+    el.innerHTML = html;
+    if (history.length >= 2) initMarketHistoryChart(history);
+  }
+
+  (function initProfileTab() {
+    renderProfileMarketOverview();
+    buildProfileIndex();
+    var note = document.getElementById("profile-cache-note");
+    var cacheDate = DATA.stock_profiles && DATA.stock_profiles.date;
+    note.textContent = cacheDate
+      ? "基本面資料快取日期：" + cacheDate + "（執行 python build_stock_profiles_cache.py 更新，共 " + profileIndex.length + " 檔）"
+      : "尚無基本面資料快取 - 請先執行 python build_stock_profiles_cache.py";
+
+    var input = document.getElementById("profile-search-input");
+
+    function matchesFor(q) {
+      // like a combobox: empty query -> full list (sorted by code), like a
+      // <select>'s dropdown; a query ranks exact code match first, then
+      // code-prefix, then name-substring, so the best match is always
+      // first - what Enter picks when nothing's been arrow-key-highlighted.
+      if (!q) {
+        return profileIndex.slice().sort(function (a, b) { return a.code.localeCompare(b.code); });
+      }
+      var exact = [], prefix = [], byName = [];
+      profileIndex.forEach(function (m) {
+        var code = m.code.toLowerCase(), name = m.name.toLowerCase();
+        if (code === q) exact.push(m);
+        else if (code.indexOf(q) === 0) prefix.push(m);
+        else if (name.indexOf(q) !== -1) byName.push(m);
+      });
+      return exact.concat(prefix, byName);
+    }
+
+    function updateSuggestions() {
+      var q = input.value.trim().toLowerCase();
+      renderProfileSuggestions(matchesFor(q).slice(0, 50));
+    }
+
+    input.addEventListener("input", updateSuggestions);
+    input.addEventListener("focus", function () {
+      // like opening a <select>'s dropdown: always show the full list on
+      // focus/click regardless of whatever text is already in the box
+      // (e.g. "台積電（2330）" left over from a previous pick) - typing
+      // (the "input" handler above) is what narrows it from there.
+      input.select();
+      renderProfileSuggestions(matchesFor("").slice(0, 50));
+    });
+    input.addEventListener("keydown", function (e) {
+      var el = document.getElementById("profile-suggestions");
+      var rows = el.querySelectorAll("div");
+      if (!rows.length) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); profileSuggestIdx = Math.min(profileSuggestIdx + 1, rows.length - 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); profileSuggestIdx = Math.max(profileSuggestIdx - 1, 0); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        rows[profileSuggestIdx >= 0 ? profileSuggestIdx : 0].click();
+        return;
+      } else if (e.key === "Escape") {
+        el.style.display = "none";
+        return;
+      } else return;
+      rows.forEach(function (r, i) { r.classList.toggle("active", i === profileSuggestIdx); });
+      rows[profileSuggestIdx].scrollIntoView({ block: "nearest" });
+    });
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".profile-search")) document.getElementById("profile-suggestions").style.display = "none";
+    });
+  })();
+
   document.querySelectorAll(".page-nav button").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll(".page-nav button").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
@@ -1211,6 +2004,7 @@
       document.getElementById("view-decisions").style.display = page === "decisions" ? "" : "none";
       document.getElementById("view-ma").style.display = page === "ma" ? "" : "none";
       document.getElementById("view-margin").style.display = page === "margin" ? "" : "none";
+      document.getElementById("view-profile").style.display = page === "profile" ? "" : "none";
       if (page === "radar" && !tableMode) render();
     });
   });
@@ -1240,6 +2034,8 @@
         render();
         renderDecisions();
         renderMargin();
+        buildProfileIndex();
+        renderProfileMarketOverview();
         clearReloadCountdown();
       },
       function (err) {

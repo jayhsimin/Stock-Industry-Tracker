@@ -208,11 +208,160 @@ but aren't companies and would otherwise dominate the lot-change rankings.
 This data is EOD-only - TWSE/TPEx publish 融資融券 balances once after
 close, Shioaji has no live feed for it - so `build_dashboard.py` and
 `build_dashboard_live.py` both call `build_margin_data()` against
-`twstock.db` the exact same way (reading `margin_trading`'s own latest
-`iso_date`, which can lag `stock_price`'s), unlike `ma_table`/price which
-differ between the two builds. `margin_report.py` is also runnable standalone
+`twstock.db` the exact same way, unlike `ma_table`/price which differ
+between the two builds. `margin_report.py` is also runnable standalone
 (`python margin_report.py --date 2026-10-27`) like `industry_report.py`/
 `concept_report.py`.
+
+**`margin_report.pick_latest_usable_date()` exists because `margin_trading`'s
+own `MAX(iso_date)` can have ZERO rows actually joinable against
+`stock_price`, even when both tables have plenty of rows for that date.**
+Confirmed 2026-11: a flaky TPEx `stock_price` fetch (`IncompleteRead`,
+unrelated transient network error) left `stock_price` with TWSE-only rows
+for one date, while `margin_trading` had TPEx-only rows for that same
+date - TWSE's legacy `MI_MARGN` has no embedded date and gets stamped with
+the run date, while TPEx's margin endpoint carries its own embedded date,
+so after a partial/failed run the two markets can end up dated a day apart.
+TWSE-code `stock_price` rows then never match TPEx-code `margin_trading`
+rows for that date, the INNER JOIN is empty, and naively using
+`MAX(iso_date)` silently produced `summary: None` for the entire 融資融券
+tab (and the 個股基本面 tab's market-overview section) even though usable
+data existed one date back. `pick_latest_usable_date()` walks
+`margin_trading`'s distinct dates newest-first and returns the first one
+with actually-joinable rows; both `build_dashboard.py`/`build_dashboard_live.py`
+and `margin_report.py`'s own CLI default use it instead of a raw
+`MAX(iso_date)` query - don't revert to the naive query when touching this.
+
+**`margin_report.build_market_history()`'s 張-count totals (`total_margin_lots`/
+`total_short_lots`/`market_short_margin_ratio`) deliberately do NOT join
+`stock_price` at all, unlike `build_margin_data()`.** `margin_trading`
+genuinely supports historical `--date` backfills (see the "STOCK_DAY_ALL/
+BWIBBU_ALL" note above), while `stock_price` does not - confirmed 2026-11:
+13 of `margin_trading`'s 19 distinct dates had **zero** matching
+`stock_price` rows. Requiring that join (like `fetch_rows()` does for the
+single-date snapshot) would cut this part of the chart down to ~4 points
+instead of the ~19 `margin_trading` actually has - 張-count trends and
+資券比 are still genuinely informative without an NT$ figure, so don't "fix"
+this by adding the join back.
+
+**The same function's `avg_margin_distance_pct`/`avg_short_distance_pct`
+(added 2026-11, market-wide 斷頭風險 series) are a deliberate HYBRID, not a
+true historical backtest.** `_stock_call_distances()` computes each stock's
+`margin_call_distance` ONCE (current price + this month's basis - there is
+no per-date historical version of either figure to compute from), then
+`build_market_history()` re-weights that FIXED per-stock value by each
+historical date's REAL `margin_trading` 張 balance - i.e. "given today's
+prices, how would aggregate exposure have looked as balance composition
+shifted across stocks over time," not "what the actual risk was back
+then." The frontend discloses this explicitly (see the note under the
+market chart in `renderProfileMarketOverview()`) - don't let it read as a
+real backtest. **`_stock_call_distances()` uses each stock's own latest
+`stock_price` date (`MAX(iso_date) GROUP BY Code`), not one shared
+`as_of_date`** - confirmed 2026-11: `pick_latest_usable_date()`'s own
+chosen date (good for the `margin_trading`/`stock_price` join) happened to
+have `stock_price` rows that were **entirely TPEx-origin** for that
+specific date (same root cause as that function's docstring - a
+TWSE-vs-TPEx fetch-timing split), which has zero overlap with
+`monthly_trading_stats` (TWSE-only), so reusing that single date here
+silently zeroed out every distance. Per-stock latest-date sidesteps the
+whole-market date-alignment problem instead of chasing it with another
+date-picker.
+
+**`stock_profile.margin_call_distance()` estimates 融資/融券 forced-
+liquidation distance using user-supplied rules of thumb (22%/46%), not a
+regulatory figure.** `MARGIN_CALL_DROP_PCT`/`SHORT_CALL_RISE_PCT` in
+`stock_profile.py` are the user's own approximate thresholds (see 2026-11
+conversation) - TWSE/TPEx don't publish each stock's actual 融資成數/融券
+保證金成數 in any dataset this pipeline fetches, so the real regulatory
+trigger price can't be computed exactly. The bigger problem: `margin_trading`
+is an aggregate 張 balance, not trade records, so there's no per-position
+entry/cost price either - `basis_price` uses `monthly_trading_stats`'
+latest `WeightedAvgPriceAB` (this month's official volume-weighted average)
+as a proxy for "typical cost of currently open positions," reasoned from
+the fact that 融資/融券 positions tend to turn over on the order of weeks,
+not years. This means the whole calculation is a labeled ESTIMATE, not a
+precise 維持率 - the frontend must keep disclosing this (see
+`renderMarginSummaryHtml()`'s note in `dashboard.html.template`), never
+present `margin_call_price`/`short_call_price` as exact. TWSE-only, same
+limit as `price_points()` (no `monthly_trading_stats` for TPEx codes ->
+`margin_call` is `None`, not a wrong number).
+
+**The focus+context brush history chart in `dashboard.html.template` is
+one generic function, `drawHistoryChart(opts)`, reused by both the
+個股基本面 tab's per-stock 融資融券 chart and the 全市場融資融券概況 card's
+market-wide chart.** `opts` carries the element selectors (`focusSel`/
+`contextSel`/`tooltipId`/`wrapSel`), the data array, and the resolved
+`metric` config ({label, decimals, suffix}) - each caller (`drawStockMarginChart()`/
+`drawMarketMarginChart()`) just supplies its own container IDs, state
+object (`marginChartState`/`marketChartState`), and metric dict
+(`MARGIN_METRICS`/`MARKET_METRICS`). Touch `drawHistoryChart()` once to fix
+both charts; don't fork it per-caller.
+
+**`stock_profile.py` (added 2026-11) assembles one company's full
+fundamentals profile for the dashboard's 個股基本面 tab - 公司基本資料,
+融資融券狀況(資券比/使用率/歷史走勢), 現價/估值(本益比), 月營收, 損益表/EPS,
+資產負債表, 股利, 重要行事曆(股東會/除權息), 歷史價格區間(年度/月度高低點).**
+Every category is a plain `twstock.db` query (no Shioaji dependency)
+covering the WHOLE market (every `company_info` company on either market),
+not just `concept_map`'s curated ~180 stocks - unlike the MA tab, nothing
+here needs per-stock `kbars()`. The 融資融券狀況 KPI row is shown FIRST
+(right after the company header, before 現價/估值) per explicit user
+request, with a d3 focus+context brush chart below it (see
+`dashboard.html.template`'s `drawMarginChart()`) so the context strip always
+shows the full history at a glance while the focus chart defaults to the
+most recent ~30 points and can be dragged back to the earliest point.
+`margin_history()` is the one category here with NO row-count cap (unlike
+every other category, which caps at a handful of recent periods) - 
+`margin_trading` is the one table in this pipeline that genuinely
+accumulates real daily history (one row per day `fetch_daily.py` has
+actually run), so it's worth keeping in full for that chart. The
+個股基本面 tab also opens with a persistent "全市場融資融券概況" card
+(`renderProfileMarketOverview()`, reusing `margin_report.py`'s own
+`DATA.margin_data` - see `marketMarginTiles()`, shared with the 融資融券
+tab's own KPI row so the two never disagree) so the whole-market picture is
+visible immediately, before any stock is even searched - the search/profile
+section below it is for per-stock drill-down, not a replacement for the
+market-wide view. Four new datasets were added to support the rest of the
+profile:
+- `shareholder_meetings` (TWSE `t187ap41_L` + TPEx `t187ap41_O`, identical
+  Chinese field names, no remap) - 開會日期/地點/是否電子投票. Keyed on
+  (公司代號, 股東常(臨時)會, 開會日期) since a company can have both a 常會
+  and one or more 臨時會 in the same batch. The `dividend` table's own
+  股東會日期 column is often blank in practice (confirmed on 2330) - this
+  dedicated table is the reliable source for that date.
+- `ex_dividend_schedule` (TWSE `exchangeReport/TWT48U_ALL` + TPEx
+  `tpex_exright_prepost`, remapped - fully different English field names
+  between markets, see `EX_DIVIDEND_TPEX_MAP`) - a rolling **near-term
+  preannouncement** window (~50-65 rows market-wide at any time), not
+  historical: `Date` is the SCHEDULED ex-rights/ex-dividend date itself, and
+  a stock whose date has already passed simply drops off the list - there's
+  no dedicated place in this pipeline to see a stock's own past ex-dividend
+  dates, only `dividend`'s 股利年度/分派日 fields.
+- `annual_trading_stats`/`monthly_trading_stats` (TWSE `FMNPTK_ALL`/
+  `FMSRFK_ALL`, TWSE-only - no TPEx equivalent found despite checking) -
+  **confirmed 2026-11 these are single-period snapshots, NOT multi-year/
+  multi-month history**: every row in one `FMNPTK_ALL` fetch had the same
+  `Year` (the most recently completed full year), and every row in one
+  `FMSRFK_ALL` fetch had the same `Month` - same snapshot-only,
+  look-ahead-bias-risk pattern already documented for `monthly_revenue`.
+  Real multi-year/-month depth only accumulates as `fetch_daily.py` keeps
+  running across real calendar years/months. Still strictly better than
+  `stock_price`'s own thin accumulated history for "this year's/month's
+  high-low" today. A TPEx-listed code gets an empty `price_points` section,
+  not an error - `stock_profile.py` discloses this in its own output rather
+  than silently showing nothing.
+- `company_info."產業別"` is a numeric code, not human-readable (see the
+  `industry_map` note above) - `stock_profile.company_info()` LEFT JOINs
+  `industry_map` for the real name, same fix `industry_report.py` already
+  relies on; a plain `SELECT` against `company_info` alone would show "24"
+  instead of "半導體業".
+- `build_stock_profiles_cache.py` precomputes all ~2000 companies' profiles
+  to `stock_profiles_cache.json` (gitignored) - same caching pattern as
+  `build_ma_cache.py`, because building all of them takes ~15-20s (SQL-only,
+  no Shioaji), too slow to redo on every one-minute live dashboard refresh.
+  `build_dashboard.py`/`build_dashboard_live.py` both just read the cache
+  (missing file -> empty, not an error); re-run the cache builder once a
+  day after `fetch_daily.py`, same schedule spirit as `build_ma_cache.py`.
 
 **`trading/` is a deliberately isolated module - a real (user-specified, not
 Claude-invented) swing strategy with a hard simulation-only gate.** See
@@ -313,6 +462,8 @@ visible on the dashboard instead of needing to be re-derived from chat/git histo
   point `Change`, since TWSE doesn't provide percentage directly)
 - `margin_report.py` — market-wide leverage + bull/bear positioning from `margin_trading`
   for the dashboard's 融資融券 tab (see Architecture above)
+- `stock_profile.py` — per-company fundamentals profile (financials, dividends, revenue,
+  EPS, PE, calendar, price range) for the dashboard's 個股基本面 tab (see Architecture above)
 - `stock_lookup.py` — shared lookup/validation/enrichment (see Architecture above)
 - `concept_map.py` — CRUD for the hand-curated `concept_map` table
 - `shioaji_test.py` — first-contact Shioaji connectivity test, dumps raw responses
@@ -321,8 +472,9 @@ visible on the dashboard instead of needing to be re-derived from chat/git histo
   concept_map's tracked stocks) with industry/concept classification, plus a day-over-day
   industry-representation trend view
 - `dashboard.html.template` — bubble-chart dashboard shell + 交易決策 (decisions log) +
-  均線總覽 (MA5/10/20 table) + 融資融券 (leverage/bull-bear) tabs; `__DATA_JSON__` is the
-  data injection point, never edit the built `dashboard.html` directly
+  均線總覽 (MA5/10/20 table) + 融資融券 (leverage/bull-bear) + 個股基本面 (per-company
+  fundamentals, search-driven) tabs; `__DATA_JSON__` is the data injection point, never
+  edit the built `dashboard.html` directly
 - `build_dashboard.py` / `build_dashboard_live.py` — fill the template from twstock.db
   (EOD) or Shioaji (intraday) respectively, both producing `dashboard.html` (gitignored
   build output). `build_dashboard_live.py` also writes `dashboard_push.json` (gitignored)
@@ -334,6 +486,13 @@ visible on the dashboard instead of needing to be re-derived from chat/git histo
   slow for the live dashboard's 1-minute cadence. `build_dashboard_live.py` just reads
   whatever's in the cache and overlays the current run's live price; `build_dashboard.py`
   (EOD, no live price available) always ships an empty 均線總覽 table.
+- `build_stock_profiles_cache.py` — pre-computes every company's fundamentals profile
+  (see `stock_profile.py` above) into `stock_profiles_cache.json` (gitignored), for the
+  個股基本面 tab. Same once-a-day caching pattern as `build_ma_cache.py`, but for a
+  different reason - no Shioaji dependency here, just ~15-20s of plain SQL across ~2000
+  companies, still too slow for the live dashboard's 1-minute cadence. Both
+  `build_dashboard.py` and `build_dashboard_live.py` read this cache the same way (unlike
+  `ma_table`, this data doesn't differ between the EOD and live builds either).
 - `refresh_dashboard.bat` — entry point for the `TWDashboardLiveRefresh` Windows
   scheduled task (every 1 min); cds into the project dir and runs
   `build_dashboard_live.py`
