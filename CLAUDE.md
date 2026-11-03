@@ -18,14 +18,15 @@ file is the architecture map.
 pip install -r requirements.txt        # only dependency: requests
 
 python fetch_daily.py                  # pull today's snapshot into twstock.db
-python fetch_daily.py --date 2026-09-24  # backfill/refetch a specific date (upsert-safe, re-run anytime) -
-                                          # only works for datasets with real historical query support
-                                          # (margin_trading, institutional_investors); see "Publish-time
-                                          # lag + holidays" below — stock_price/stock_valuation CANNOT be
-                                          # backfilled this way
+python fetch_daily.py --date 2026-09-24  # backfill/refetch a specific date (upsert-safe) -
+                                          # only real for datasets with historical query
+                                          # support (margin_trading, institutional_investors);
+                                          # stock_price/stock_valuation CANNOT be backfilled
 
 python industry_report.py --date 2026-09-24              # 4 reports grouped by official 產業別
 python concept_report.py --date 2026-09-24 [--detail]    # ranks self-curated concepts by avg %change
+python margin_report.py --date 2026-10-27                # market-wide leverage + bull/bear tilt
+python stock_profile.py 2330                              # one company's full fundamentals profile
 
 python stock_lookup.py --codes 2603 2609
 python stock_lookup.py --names "長榮" "陽明"
@@ -34,505 +35,235 @@ python stock_lookup.py --concept "AI伺服器"
 python stock_lookup.py --list-industries
 
 python concept_map.py add --concept "AI伺服器" --codes 2382 3231 --note "..."
-python concept_map.py show --concept "AI伺服器"
-python concept_map.py list
 ```
 
-There is no test suite or linter configured in this project.
+No test suite or linter is configured in this project.
 
 ## Architecture
 
 **Data flow:** `fetch_daily.py` iterates the endpoint registry in `datasets.py`, calls
-`twse_client.fetch_json()` for each, and hands the resulting list of dicts to
-`db.upsert_records()`, which creates the destination table on first use (columns inferred
-from whatever keys the API returned) and upserts by the dataset's declared key columns.
-Every dataset in `datasets.py` covers **all** companies on its market (TWSE or TPEx) in a
-single HTTP call — there is no per-stock looping anywhere in this codebase.
+`twse_client.fetch_json()`, and hands each list of dicts to `db.upsert_records()`, which
+creates the table on first use and upserts by the dataset's declared key columns. Every
+dataset covers **all** companies on its market in one HTTP call — no per-stock looping
+anywhere in this codebase.
 
-**Everything is stored as TEXT.** Source APIs return JSON strings for numbers; `db.py`
-never casts. Any numeric query must `CAST(NULLIF(col, '') AS REAL)` (empty string, not
-NULL, is how "no value" shows up) — see the `NUM`/`PCT_CHANGE` SQL fragments in
-`industry_report.py` / `concept_report.py` for the pattern.
+**Everything is stored as TEXT** — source APIs return JSON strings; `db.py` never casts.
+Any numeric query needs `CAST(NULLIF(col, '') AS REAL)` (empty string, not NULL, means "no
+value"). See `industry_report.py`'s `NUM`/`PCT_CHANGE` fragments for the pattern.
 
 **Two API response shapes, one client.** `twse_client.fetch_json()` normalizes both: bare
-JSON arrays (`openapi.twse.com.tw` endpoints) and the legacy `www.twse.com.tw` shape
-(`{"stat", "fields", "data"}`, where `stat != "OK"` means no data for that date/query yet —
-a holiday or not-yet-published, not an error, and returns `[]` rather than raising).
+JSON arrays (`openapi.twse.com.tw`) and the legacy `www.twse.com.tw` shape
+(`{"stat","fields","data"}`, `stat != "OK"` → no data yet, returns `[]` not an error).
 
-**Legacy-endpoint numbers have thousands-separator commas.** The T86 institutional-investors
-endpoint (`fetch_institutional_investors`) returns e.g. `"6,070,992"`; SQLite's
-`CAST(... AS REAL)` silently truncates at the comma to `6.0`. `twse_client.py` strips commas
-at ingestion time. If a new legacy (`www.twse.com.tw`) endpoint is ever added, check for this
-before trusting any aggregate built on it.
+**Legacy-endpoint numbers have thousands-separator commas** (T86 institutional-investors:
+`"6,070,992"`, which `CAST AS REAL` would silently truncate to `6.0`). `twse_client.py`
+strips commas at ingestion. Check for this before trusting any aggregate on a new legacy
+(`www.twse.com.tw`) endpoint.
 
-**ROC-calendar dates.** TWSE embeds dates as ROC-calendar strings (e.g. `"1150924"` =
-2026-09-24) in datasets that carry their own `Date` field; `utils.roc_to_iso()` converts
-these. Datasets with no embedded date (`margin_trading`, `institutional_investors`) get
-stamped with whatever `--date` was passed to `fetch_daily.py` instead — check
-`datasets.py`'s `date_field`/`date_is_roc` per dataset before assuming a table's `iso_date`
-means what you think.
+**ROC-calendar dates.** TWSE embeds ROC strings (`"1150924"` = 2026-09-24) in datasets with
+their own `Date` field; `utils.roc_to_iso()` converts. Datasets with no embedded date
+(`margin_trading`, `institutional_investors`) get stamped with whatever `--date` was passed
+instead — check `datasets.py`'s `date_field`/`date_is_roc` before trusting a table's
+`iso_date`.
 
-**Publish-time lag + holidays.** `stock_price`/`stock_valuation` (STOCK_DAY_ALL/BWIBBU_ALL)
-publish later in the evening than `margin_trading`/`institutional_investors` for the same
-trading day — don't assume "today" has all tables populated. The market can also be closed
-for several consecutive days (TWSE's `holidaySchedule` endpoint has the calendar); check
-before assuming the most recent calendar weekday has trading data.
+**Publish lag + holidays.** `stock_price`/`stock_valuation` publish later in the evening
+than `margin_trading`/`institutional_investors` for the same day. The market can also close
+for several consecutive days (TWSE's `holidaySchedule` has the calendar) — don't assume the
+latest weekday has data.
 
-**STOCK_DAY_ALL/BWIBBU_ALL have NO historical-query support — `--date` is silently ignored
-for them.** Confirmed 2026-10: running `fetch_daily.py --date <past-date>` for 13 different
-past trading days still only ever wrote the single most-recently-published day into
-`stock_price`/`stock_valuation` (whatever ROC date is embedded in the response itself,
-per the "ROC-calendar dates" note above — these endpoints just return "latest," ignoring
-the requested date), so after the loop the table still only had 3 scattered dates instead
-of a continuous run. This is different from `margin_trading`/`institutional_investors`,
-which genuinely honor `--date` (no embedded `Date` field, so `fetch_daily.py` stamps
-whatever `--date` was passed — see `backfill_institutional.py`, built specifically because
-T86 does support this). **A `stock_price`/`stock_valuation` gap from not running
-`fetch_daily.py` daily is permanent and cannot be backfilled retroactively** — only a
-daily-scheduled run accumulates real history for these two tables going forward.
+**`STOCK_DAY_ALL`/`BWIBBU_ALL` have NO real historical-query support — `--date` is silently
+ignored.** They always return whatever TWSE currently considers "latest," regardless of the
+requested date. `margin_trading`/`institutional_investors` genuinely do honor `--date` (no
+embedded `Date` field, so `fetch_daily.py` stamps whatever was passed). **A
+`stock_price`/`stock_valuation` gap from not running `fetch_daily.py` daily is permanent and
+cannot be backfilled** — only daily-scheduled runs accumulate real history for these two.
 
-**`warrant_info`/`warrant_trading` (added 2026-10) cover 權證, both markets.** TWSE's
-`t187ap37_L`/`t187ap42_L` and TPEx's `mopsfin_t187ap37_O`/`mopsfin_t187ap42_O` already use
-**identical** Chinese field names across both markets for `warrant_info` (標的證券/履約價/
-到期日 etc. - no remap needed, same pattern as `monthly_revenue_tpex`), and only one field
-differs for `warrant_trading` (TPEx's `成交數量` vs TWSE's `成交張數` - handled by
-`WARRANT_TRADING_TPEX_MAP`, mode `"partial"`). `warrant_info` has no `date_field` and
-upserts by `權證代號` alone (like `company_info` - the row just gets overwritten in place as
-履約價/備註 etc. change over the warrant's life); `warrant_trading` is dated by `交易日期`
-like `stock_price`. **TWSE's `t187ap42_L` (成交金額/warrant_trading) can return an empty
-array even when `STOCK_DAY_ALL` has same-day data** (confirmed 2026-10-27, 22:41 - regular
-`stock_price` had 1383 rows, `t187ap42_L` had 0) - a different, not-yet-understood publish
-timing from the rest of the chip datasets, not a bug; `fetch_dataset()` already handles a
-`[]` response as "no data yet," same as any other dataset. TPEx's side was unaffected
-(12,166 rows) on that same run.
+**`warrant_info`/`warrant_trading` cover 權證, both markets.** TWSE's `t187ap37_L`/
+`t187ap42_L` and TPEx's `mopsfin_t187ap37_O`/`mopsfin_t187ap42_O` already share identical
+Chinese field names for `warrant_info` (no remap); `warrant_trading` only differs in one
+field (`WARRANT_TRADING_TPEX_MAP`, mode `"partial"`). `warrant_info` upserts by `權證代號`
+alone (like `company_info`); `warrant_trading` is dated by `交易日期`. TWSE's
+`t187ap42_L` can return `[]` even when `STOCK_DAY_ALL` has same-day data — a publish-timing
+quirk, not a bug; treated the same as any other "no data yet" response.
 
-**TWSE and TPEx merge into the same tables under different field names.** TPEx uses
-different field names than TWSE for equivalent data (e.g. TWSE's price dataset has
-`Code`/`ClosingPrice`, TPEx's has `SecuritiesCompanyCode`/`Close`). Every TPEx entry in
-`datasets.py` carries a `remap` = `(mapping_dict, mode)` applied in `fetch_daily.py` before
-the date/upsert logic:
-- `mode="full"` (`twse_client.remap_full`) — build a clean record using **only** the
-  mapped fields. Required for `stock_price`, `stock_valuation`, `margin_trading`,
-  `institutional_investors`, since `stock_lookup.py`/`industry_report.py`/
-  `concept_report.py` hardcode those tables' column names and must not care which market
-  a row came from.
-- `mode="partial"` (`twse_client.remap_partial`) — rename only the mapped (key) fields,
-  leave the rest as-is. Used for `company_info` and the income/balance-statement tables,
-  where extra source-specific columns are harmless.
-- `db._ensure_table` evolves existing tables with `ALTER TABLE ADD COLUMN` for any new key
-  a batch introduces, rather than only creating the table once — required because TWSE and
-  TPEx rows landing in the same table rarely have byte-identical column sets even after
-  remapping.
-- TPEx doesn't split dealer buy/sell into self-trading vs. hedging like TWSE does;
-  `fetch_daily.py` fills the overall `自營商買賣超股數` column from the self-trading figure
-  as the closest available proxy for TPEx rows, and the hedging-specific columns are left
-  empty for them (absent data, not wrong data).
-- TWSE's institutional-investor data comes from a legacy endpoint requiring an explicit
-  `date` query param (`twse_client.fetch_institutional_investors`, special-cased in
-  `fetch_daily.py`); TPEx's equivalent (`tpex_3insti_daily_trading`) is a normal
-  latest-snapshot endpoint with an embedded `Date` field and goes through the standard
-  `fetch_dataset()` path like everything else — don't assume the two markets' institutional
-  data is fetched the same way if you touch this.
-- `dividend` is TWSE-only — TPEx's equivalent (`mopsfin_t187ap39_O`) has a different enough
-  column set that it wasn't worth reconciling; add it the same `datasets.py` way if needed.
+**TWSE and TPEx merge into the same tables under different field names.** Every TPEx entry
+in `datasets.py` carries a `remap = (mapping_dict, mode)` applied before upsert:
+- `mode="full"` (`twse_client.remap_full`) — build a clean record using **only** the mapped
+  fields. Required wherever downstream SQL hardcodes column names: `stock_price`,
+  `stock_valuation`, `margin_trading`, `institutional_investors`, `ex_dividend_schedule`.
+- `mode="partial"` (`remap_partial`) — rename only the key fields, keep the rest. Used for
+  `company_info` and income/balance-statement tables, where extra columns are harmless.
+- `db._ensure_table` evolves tables with `ALTER TABLE ADD COLUMN` on every batch (not just
+  table creation) since TWSE/TPEx rows rarely have identical column sets even after remap.
+- TPEx doesn't split dealer buy/sell into self-trading vs. hedging; `fetch_daily.py` fills
+  the overall `自營商買賣超股數` from the self-trading figure for TPEx rows, leaving
+  hedging-specific columns empty (absent, not wrong).
+- TWSE's institutional-investor data is a legacy endpoint needing an explicit `date` param
+  (special-cased in `fetch_daily.py`); TPEx's (`tpex_3insti_daily_trading`) is a normal
+  latest-snapshot endpoint through the standard `fetch_dataset()` path.
+- `dividend` and `annual_trading_stats`/`monthly_trading_stats` are TWSE-only (no TPEx
+  equivalent reconciled/found); TPEx codes just get empty results there, not errors.
 
 **`industry_map` is a view, not a table.** Official 產業別 lives in `company_info` only as
-a numeric code (not human-readable). `db.ensure_views()` (called at the end of every
-`fetch_daily.py` run) rebuilds `industry_map` from `monthly_revenue`'s human-readable 產業別,
-taking each company's latest reporting month. Query this view for official-industry grouping,
-never `company_info."產業別"` directly.
+a numeric code. `db.ensure_views()` (end of every `fetch_daily.py` run) rebuilds
+`industry_map` from `monthly_revenue`'s human-readable 產業別 (each company's latest
+reporting month). Always query this view for official-industry grouping, never
+`company_info."產業別"` directly — it's just a number.
 
-**`concept_map` is hand-curated, not derived.** No free official or scraped source of
-theme/concept classification exists for TWSE (FinMind has one — `TaiwanStockIndustryChain`
-— but it's paid Sponsor-tier). `concept_map` (concept, stock_id, note, added_date) is built
-manually via `concept_map.py add`, one theme at a time, only once a news analysis has
-verified the business relationship — it starts empty and only grows through vetted use, by
-design. **A stock can and normally does belong to multiple concepts** (e.g. 力積電 is both
-記憶體 and 晶圓代工) — the schema's primary key is `(concept, stock_id)`, not `stock_id`
-alone, specifically to allow this.
+**`concept_map` is hand-curated, not derived** — no free official/scraped TWSE theme
+classification exists (FinMind's is paid Sponsor-tier). Built one theme at a time via
+`concept_map.py add`, only after a news analysis verifies the real business relationship.
+**A stock can belong to multiple concepts** — PK is `(concept, stock_id)`, not `stock_id`.
 
-**`stock_lookup.py` is the shared validation/enrichment layer** underneath `--codes`,
-`--names`, `--industry`, and `--concept`. All four resolve to a set of stock codes and go
-through the same `LOOKUP_SQL` (joins `company_info` + `industry_map` + today's
-`stock_price`/`stock_valuation`/`institutional_investors`/`margin_trading`) before being
-sorted by `|三大法人買賣超|` descending. Two things to preserve if you touch this file:
-- `--names` matching is two-tier: short name (`公司簡稱`) first, and only falls back to
-  substring-matching the full legal name (`公司名稱`) — flagged `[weak match]` — because
-  full-name substring overlap produces real false positives between unrelated companies
-  (e.g. "李長榮科技" contains "長榮" but has no relation to the Evergreen/長榮 shipping group).
-- Candidates are deduped through a `code -> set(sources)` dict before lookup, not a flat
-  list, so a stock matching multiple `--industry`/`--concept` args is shown once (with a
-  `matched_via` column) instead of once per matching source.
+**`stock_lookup.py` is the shared validation/enrichment layer** under `--codes`/`--names`/
+`--industry`/`--concept`, joining `company_info` + `industry_map` + today's
+`stock_price`/`stock_valuation`/`institutional_investors`/`margin_trading`, sorted by
+`|三大法人買賣超|` descending. Two things to preserve: (1) `--names` is two-tier — short
+name (`公司簡稱`) first, full-name substring match flagged `[weak match]` (full-name overlap
+gives real false positives, e.g. "長榮" matching "李長榮科技" which is unrelated); (2)
+candidates dedupe through `code -> set(sources)` before lookup so a stock matching multiple
+`--industry`/`--concept` args shows once with a `matched_via` column.
 
-**Shioaji (永豐金) is query-only, intentionally.** `realtime_quote.py` adds intraday price
-on top of `twstock.db`'s end-of-day data, reusing `stock_lookup.py`'s `resolve_names`/
-`codes_by_industry`/`codes_by_concept` directly (imported, not duplicated) so the same
-`--codes`/`--names`/`--industry`/`--concept` selectors work identically across both scripts.
-No order-placement code (`place_order` etc.) exists anywhere in this repo — that was an
-explicit scope decision (real-money risk, needs risk controls not yet designed), not an
-oversight. Don't add trading/execution code without the user explicitly asking for it and
-discussing risk controls first. Credentials load via `utils.load_env()` (a minimal
-hand-rolled `.env` reader, no `python-dotenv` dependency) from `.env` (gitignored,
-`.env.example` documents the two required keys); `simulation=True` is the default in both
-`shioaji_test.py` and `realtime_quote.py` — note that Shioaji's simulation mode still
-returns real market quotes, only order execution is simulated, so it's safe for all
-query-only use.
+**Shioaji (永豐金) is query-only, intentionally.** `realtime_quote.py` reuses
+`stock_lookup.py`'s selector functions directly (imported, not duplicated). No
+order-placement code exists outside `trading/` — don't add trading/execution code without
+the user explicitly asking and discussing risk controls first. `simulation=True` is the
+default everywhere outside `trading/`; Shioaji's simulation mode still returns real market
+quotes, only order execution is simulated.
 
-**`market_movers.py` filters out warrants/ETFs via `INNER JOIN company_info`, not just
-`industry_map`.** `stock_price` contains every security TWSE/TPEx reports, including
-warrants — derivatives whose %change is leveraged and routinely swings ±100%+, which
-completely dominates a naive "biggest %change" ranking (confirmed: the unfiltered query
-returned 20/20 warrants). `company_info` only has actual companies, so inner-joining it
-is the filter. Shioaji's `scanners(ChangePercentRank)` was tried as an alternative and
-rejected — its results skewed toward thin-volume stocks clustered at exactly ±10%, not a
-clean ranking; our own EOD data is more reliable for this.
+**`market_movers.py` filters warrants/ETFs via `INNER JOIN company_info`, not just
+`industry_map`** — `stock_price` contains every security including leveraged warrants that
+dominate a naive %change ranking. Shioaji's `scanners()` was tried and rejected (skewed
+toward thin-volume stocks clustered at exactly ±10%); our own EOD data is more reliable.
 
-**`margin_report.py` (added 2026-11) computes the dashboard's 融資融券 tab -
-market-wide leverage + bull/bear positioning - entirely from `margin_trading`,
-no new fetch needed.** `margin_trading` (TWSE's MI_MARGN + TPEx's
-`tpex_mainboard_margin_balance`, already in `datasets.py`) carries BOTH
-今日餘額 and 前日餘額 for 融資/融券 on every row, so day-over-day change is
-arithmetic on a single row - no self-join against yesterday's date needed.
-Balances are in 張 (1000-share lots); NT$ amounts are derived by multiplying
-by 1000 and that day's `stock_price` close. `build_margin_data()` returns
-market totals (融資/融券 balance in NT$, 市場資券比 = short/margin ratio at
-the whole-market level, today's net flow), six stock-level rankings (融資/
-融券 increase/decrease, 資券比 highest, 融資使用率 = balance/quota highest -
-closest to forced deleveraging), and concept/industry group aggregation
-(median 資券比 + summed lot change per theme, same `concept_map`/
-`industry_map` membership the bubble-chart tab already uses) - this is
-"various types of this kind of data," not just one number, by design (see
-2026-11 conversation). Like `market_movers.py`, `fetch_rows()` INNER JOINs
-`company_info` to exclude ETFs/bonds (e.g. `00679B`) that are margin-eligible
-but aren't companies and would otherwise dominate the lot-change rankings.
-This data is EOD-only - TWSE/TPEx publish 融資融券 balances once after
-close, Shioaji has no live feed for it - so `build_dashboard.py` and
-`build_dashboard_live.py` both call `build_margin_data()` against
-`twstock.db` the exact same way, unlike `ma_table`/price which differ
-between the two builds. `margin_report.py` is also runnable standalone
-(`python margin_report.py --date 2026-10-27`) like `industry_report.py`/
-`concept_report.py`.
+**`margin_report.py` computes the 融資融券 tab's market-wide leverage/bull-bear data,
+entirely from `margin_trading`** (TWSE MI_MARGN + TPEx equivalent). Every row carries both
+今日餘額 and 前日餘額, so day-over-day change is arithmetic on one row, no self-join needed.
+Balances are in 張 (1000-share lots); NT$ = `張 × 1000 × close`. `fetch_rows()` INNER JOINs
+`company_info` to exclude ETFs/bonds the same way `market_movers.py` does. Three gotchas
+found building this, all still live risks if touched carelessly:
+- **`pick_latest_usable_date()`** exists because `margin_trading`'s own `MAX(iso_date)` can
+  have zero rows joinable against `stock_price` — a partial/failed fetch can leave the two
+  markets dated a day apart (TWSE's legacy endpoint stamps the run date; TPEx carries its
+  own embedded date), so TWSE-code price rows never match TPEx-code margin rows for that
+  date. It walks dates newest-first for the first one with actually-joinable rows. Always
+  use it instead of a raw `MAX(iso_date)` query.
+- **`build_market_history()`'s 張-count totals deliberately skip the `stock_price` join** —
+  `margin_trading` genuinely backfills historical dates but `stock_price` does not, so
+  requiring that join would cut 19 real dates down to ~4. 資券比/張-counts don't need price.
+- **`avg_margin_distance_pct`/`avg_short_distance_pct` (市場斷頭風險) are a deliberate
+  hybrid, not a backtest**: each stock's distance-to-call is computed ONCE from today's
+  price (no historical price series exists to compute it per-date from), then re-weighted
+  per historical date by that date's real margin balance — "today's prices applied to how
+  exposure was distributed over time," not "the actual risk back then." Must stay disclosed
+  in the UI. `_stock_call_distances()` uses each stock's own latest `stock_price` date
+  (`MAX(iso_date) GROUP BY Code`), not one shared date — a shared date can land on a
+  TPEx-only snapshot with zero overlap against TWSE-only `monthly_trading_stats`.
 
-**`margin_report.pick_latest_usable_date()` exists because `margin_trading`'s
-own `MAX(iso_date)` can have ZERO rows actually joinable against
-`stock_price`, even when both tables have plenty of rows for that date.**
-Confirmed 2026-11: a flaky TPEx `stock_price` fetch (`IncompleteRead`,
-unrelated transient network error) left `stock_price` with TWSE-only rows
-for one date, while `margin_trading` had TPEx-only rows for that same
-date - TWSE's legacy `MI_MARGN` has no embedded date and gets stamped with
-the run date, while TPEx's margin endpoint carries its own embedded date,
-so after a partial/failed run the two markets can end up dated a day apart.
-TWSE-code `stock_price` rows then never match TPEx-code `margin_trading`
-rows for that date, the INNER JOIN is empty, and naively using
-`MAX(iso_date)` silently produced `summary: None` for the entire 融資融券
-tab (and the 個股基本面 tab's market-overview section) even though usable
-data existed one date back. `pick_latest_usable_date()` walks
-`margin_trading`'s distinct dates newest-first and returns the first one
-with actually-joinable rows; both `build_dashboard.py`/`build_dashboard_live.py`
-and `margin_report.py`'s own CLI default use it instead of a raw
-`MAX(iso_date)` query - don't revert to the naive query when touching this.
+**`stock_profile.py` assembles one company's full fundamentals profile** for the 個股基本面
+tab — company info, 融資融券狀況 (shown first, per request), current price/PE, monthly
+revenue, income/balance statement, dividends, shareholder-meeting/ex-dividend calendar,
+annual/monthly price range. Pure SQL, no Shioaji, so it covers the whole market (not just
+`concept_map`'s ~180). `margin_call_distance()` estimates 融資/融券 forced-liquidation
+distance using **user-supplied** thresholds (`MARGIN_CALL_DROP_PCT`=22%,
+`SHORT_CALL_RISE_PCT`=46%, not a regulatory figure — no dataset here has real per-stock
+融資成數/融券保證金成數 or per-position entry price), applied to `monthly_trading_stats`'
+latest `WeightedAvgPriceAB` as a cost-basis proxy. Always a labeled estimate, never exact.
+`margin_history()` is uncapped (unlike every other category) since `margin_trading` is the
+one table that genuinely accumulates real daily history. Four datasets support this:
+`shareholder_meetings` (TWSE `t187ap41_L` + TPEx `t187ap41_O`, identical fields, keyed on
+公司代號+股東常臨時會+開會日期 since one company can have several meetings; `dividend`'s own
+股東會日期 is often blank, this is the reliable source), `ex_dividend_schedule` (TWSE
+`TWT48U_ALL` + TPEx `tpex_exright_prepost`, remapped — a rolling **near-term preannouncement
+only**, past dates just drop off the list), `annual_trading_stats`/`monthly_trading_stats`
+(TWSE `FMNPTK_ALL`/`FMSRFK_ALL`, confirmed **single-period snapshots** not multi-year
+history — every row in one fetch shares the same Year/Month; real depth only grows as
+`fetch_daily.py` keeps running). `company_info."產業別"` is numeric — `company_info()` LEFT
+JOINs `industry_map` for the real name. `build_stock_profiles_cache.py` precomputes all
+~2000 profiles to `stock_profiles_cache.json` (~15-20s, too slow for live refresh) — both
+dashboard builders just read the cache.
 
-**`margin_report.build_market_history()`'s 張-count totals (`total_margin_lots`/
-`total_short_lots`/`market_short_margin_ratio`) deliberately do NOT join
-`stock_price` at all, unlike `build_margin_data()`.** `margin_trading`
-genuinely supports historical `--date` backfills (see the "STOCK_DAY_ALL/
-BWIBBU_ALL" note above), while `stock_price` does not - confirmed 2026-11:
-13 of `margin_trading`'s 19 distinct dates had **zero** matching
-`stock_price` rows. Requiring that join (like `fetch_rows()` does for the
-single-date snapshot) would cut this part of the chart down to ~4 points
-instead of the ~19 `margin_trading` actually has - 張-count trends and
-資券比 are still genuinely informative without an NT$ figure, so don't "fix"
-this by adding the join back.
+**The dashboard's focus+context brush history chart is one generic function,
+`drawHistoryChart(opts)`** (`dashboard.html.template`), reused by 個股基本面's per-stock
+融資融券 chart and the market-wide chart — `opts` carries element selectors, the data array,
+and a `metric` config ({label, decimals, suffix, dataDesc, formula, meaning}). Fix it once
+for both charts; don't fork per-caller. Every chart (including the bubble chart) renders a
+資料內容/公式/代表意義 explainer box below it via `chartExplainerHtml()`, updated whenever
+the active metric/mode changes.
 
-**The same function's `avg_margin_distance_pct`/`avg_short_distance_pct`
-(added 2026-11, market-wide 斷頭風險 series) are a deliberate HYBRID, not a
-true historical backtest.** `_stock_call_distances()` computes each stock's
-`margin_call_distance` ONCE (current price + this month's basis - there is
-no per-date historical version of either figure to compute from), then
-`build_market_history()` re-weights that FIXED per-stock value by each
-historical date's REAL `margin_trading` 張 balance - i.e. "given today's
-prices, how would aggregate exposure have looked as balance composition
-shifted across stocks over time," not "what the actual risk was back
-then." The frontend discloses this explicitly (see the note under the
-market chart in `renderProfileMarketOverview()`) - don't let it read as a
-real backtest. **`_stock_call_distances()` uses each stock's own latest
-`stock_price` date (`MAX(iso_date) GROUP BY Code`), not one shared
-`as_of_date`** - confirmed 2026-11: `pick_latest_usable_date()`'s own
-chosen date (good for the `margin_trading`/`stock_price` join) happened to
-have `stock_price` rows that were **entirely TPEx-origin** for that
-specific date (same root cause as that function's docstring - a
-TWSE-vs-TPEx fetch-timing split), which has zero overlap with
-`monthly_trading_stats` (TWSE-only), so reusing that single date here
-silently zeroed out every distance. Per-stock latest-date sidesteps the
-whole-market date-alignment problem instead of chasing it with another
-date-picker.
+**`trading/` is a deliberately isolated module — a real (user-specified) swing strategy
+with a hard simulation-only gate.** See `trading/README.md` for the full rule set. The one
+fact that must never regress: `trading/executor.py`'s order functions only reach
+`simulation=False` when BOTH `--live` is passed AND the env var in `trading/config.py`
+(`LIVE_CONFIRM_ENV_VAR`) equals its exact confirmation string — never loosen to one
+condition. Needs the full-permission `SHIOAJI_API_KEY_all`/`SHIOAJI_SECRET_KEY_all` pair,
+not the data-only pair other scripts use. A `406 Please sign <account> first` means CA
+activation is still outstanding on the broker's side, not a code bug — never handle a
+user's CA certificate/password directly. `ma_data.py` resamples Shioaji minute-bar
+`kbars()` to daily closes itself (no native daily-OHLC mode for stocks).
 
-**`stock_profile.margin_call_distance()` estimates 融資/融券 forced-
-liquidation distance using user-supplied rules of thumb (22%/46%), not a
-regulatory figure.** `MARGIN_CALL_DROP_PCT`/`SHORT_CALL_RISE_PCT` in
-`stock_profile.py` are the user's own approximate thresholds (see 2026-11
-conversation) - TWSE/TPEx don't publish each stock's actual 融資成數/融券
-保證金成數 in any dataset this pipeline fetches, so the real regulatory
-trigger price can't be computed exactly. The bigger problem: `margin_trading`
-is an aggregate 張 balance, not trade records, so there's no per-position
-entry/cost price either - `basis_price` uses `monthly_trading_stats`'
-latest `WeightedAvgPriceAB` (this month's official volume-weighted average)
-as a proxy for "typical cost of currently open positions," reasoned from
-the fact that 融資/融券 positions tend to turn over on the order of weeks,
-not years. This means the whole calculation is a labeled ESTIMATE, not a
-precise 維持率 - the frontend must keep disclosing this (see
-`renderMarginSummaryHtml()`'s note in `dashboard.html.template`), never
-present `margin_call_price`/`short_call_price` as exact. TWSE-only, same
-limit as `price_points()` (no `monthly_trading_stats` for TPEx codes ->
-`margin_call` is `None`, not a wrong number).
+**`trading/daytrade/` is a second, independent strategy (ORB day-trade)** reusing
+`executor.py`/`positions.py` but with its own config/data layer. Every signal input comes
+from `api.kbars()` for TODAY only (never `api.snapshots()`, whose `volume_ratio`/
+`total_amount` are day-over-day, not minute-level). `backtest.py` replays the same
+`minute_data.py`/`signals.py` functions against historical kbars with no look-ahead.
+Candidates come from `watchlist.py` — whole-market (not `concept_map`) liquidity+volatility,
+cached once pre-market by `build_watchlist.py` (~10-12 min for ~2000 stocks, too slow for
+the 1-minute monitor cadence) — a backtest traced losing trades to thin `concept_map`
+stocks clearing ORB conditions on noise, hence the wider universe. Supports long AND short
+via 資券當沖 (`short_sell()`/`cover_buy()` use `ShortSelling`/`MarginTrading` order conds,
+not plain Cash) — functions taking a `side` ("long"/"short") flip which price direction is
+a win, never assume "up" without checking `side`. `news_api.py` is the programmatic track
+(cnyes `tw_stock_news`, genuinely supports date-range queries, unlike TWSE's own
+announcements endpoint) — mention-count ranking skews toward mega-caps, a known bias.
+`--source ai_chain` trades at most ONE stock/day: `concept_map`'s AI伺服器 members →
+volume filter → most cnyes mentions wins, cheap enough to compute inline on cache miss.
 
-**The focus+context brush history chart in `dashboard.html.template` is
-one generic function, `drawHistoryChart(opts)`, reused by both the
-個股基本面 tab's per-stock 融資融券 chart and the 全市場融資融券概況 card's
-market-wide chart.** `opts` carries the element selectors (`focusSel`/
-`contextSel`/`tooltipId`/`wrapSel`), the data array, and the resolved
-`metric` config ({label, decimals, suffix}) - each caller (`drawStockMarginChart()`/
-`drawMarketMarginChart()`) just supplies its own container IDs, state
-object (`marginChartState`/`marketChartState`), and metric dict
-(`MARGIN_METRICS`/`MARKET_METRICS`). Touch `drawHistoryChart()` once to fix
-both charts; don't fork it per-caller.
-
-**`stock_profile.py` (added 2026-11) assembles one company's full
-fundamentals profile for the dashboard's 個股基本面 tab - 公司基本資料,
-融資融券狀況(資券比/使用率/歷史走勢), 現價/估值(本益比), 月營收, 損益表/EPS,
-資產負債表, 股利, 重要行事曆(股東會/除權息), 歷史價格區間(年度/月度高低點).**
-Every category is a plain `twstock.db` query (no Shioaji dependency)
-covering the WHOLE market (every `company_info` company on either market),
-not just `concept_map`'s curated ~180 stocks - unlike the MA tab, nothing
-here needs per-stock `kbars()`. The 融資融券狀況 KPI row is shown FIRST
-(right after the company header, before 現價/估值) per explicit user
-request, with a d3 focus+context brush chart below it (see
-`dashboard.html.template`'s `drawMarginChart()`) so the context strip always
-shows the full history at a glance while the focus chart defaults to the
-most recent ~30 points and can be dragged back to the earliest point.
-`margin_history()` is the one category here with NO row-count cap (unlike
-every other category, which caps at a handful of recent periods) - 
-`margin_trading` is the one table in this pipeline that genuinely
-accumulates real daily history (one row per day `fetch_daily.py` has
-actually run), so it's worth keeping in full for that chart. The
-個股基本面 tab also opens with a persistent "全市場融資融券概況" card
-(`renderProfileMarketOverview()`, reusing `margin_report.py`'s own
-`DATA.margin_data` - see `marketMarginTiles()`, shared with the 融資融券
-tab's own KPI row so the two never disagree) so the whole-market picture is
-visible immediately, before any stock is even searched - the search/profile
-section below it is for per-stock drill-down, not a replacement for the
-market-wide view. Four new datasets were added to support the rest of the
-profile:
-- `shareholder_meetings` (TWSE `t187ap41_L` + TPEx `t187ap41_O`, identical
-  Chinese field names, no remap) - 開會日期/地點/是否電子投票. Keyed on
-  (公司代號, 股東常(臨時)會, 開會日期) since a company can have both a 常會
-  and one or more 臨時會 in the same batch. The `dividend` table's own
-  股東會日期 column is often blank in practice (confirmed on 2330) - this
-  dedicated table is the reliable source for that date.
-- `ex_dividend_schedule` (TWSE `exchangeReport/TWT48U_ALL` + TPEx
-  `tpex_exright_prepost`, remapped - fully different English field names
-  between markets, see `EX_DIVIDEND_TPEX_MAP`) - a rolling **near-term
-  preannouncement** window (~50-65 rows market-wide at any time), not
-  historical: `Date` is the SCHEDULED ex-rights/ex-dividend date itself, and
-  a stock whose date has already passed simply drops off the list - there's
-  no dedicated place in this pipeline to see a stock's own past ex-dividend
-  dates, only `dividend`'s 股利年度/分派日 fields.
-- `annual_trading_stats`/`monthly_trading_stats` (TWSE `FMNPTK_ALL`/
-  `FMSRFK_ALL`, TWSE-only - no TPEx equivalent found despite checking) -
-  **confirmed 2026-11 these are single-period snapshots, NOT multi-year/
-  multi-month history**: every row in one `FMNPTK_ALL` fetch had the same
-  `Year` (the most recently completed full year), and every row in one
-  `FMSRFK_ALL` fetch had the same `Month` - same snapshot-only,
-  look-ahead-bias-risk pattern already documented for `monthly_revenue`.
-  Real multi-year/-month depth only accumulates as `fetch_daily.py` keeps
-  running across real calendar years/months. Still strictly better than
-  `stock_price`'s own thin accumulated history for "this year's/month's
-  high-low" today. A TPEx-listed code gets an empty `price_points` section,
-  not an error - `stock_profile.py` discloses this in its own output rather
-  than silently showing nothing.
-- `company_info."產業別"` is a numeric code, not human-readable (see the
-  `industry_map` note above) - `stock_profile.company_info()` LEFT JOINs
-  `industry_map` for the real name, same fix `industry_report.py` already
-  relies on; a plain `SELECT` against `company_info` alone would show "24"
-  instead of "半導體業".
-- `build_stock_profiles_cache.py` precomputes all ~2000 companies' profiles
-  to `stock_profiles_cache.json` (gitignored) - same caching pattern as
-  `build_ma_cache.py`, because building all of them takes ~15-20s (SQL-only,
-  no Shioaji), too slow to redo on every one-minute live dashboard refresh.
-  `build_dashboard.py`/`build_dashboard_live.py` both just read the cache
-  (missing file -> empty, not an error); re-run the cache builder once a
-  day after `fetch_daily.py`, same schedule spirit as `build_ma_cache.py`.
-
-**`trading/` is a deliberately isolated module - a real (user-specified, not
-Claude-invented) swing strategy with a hard simulation-only gate.** See
-`trading/README.md` for the full rule set; the one fact that must never
-regress: `trading/executor.py`'s order functions only ever reach
-`simulation=False` when BOTH `--live` is passed AND the environment variable
-named in `trading/config.py` (`LIVE_CONFIRM_ENV_VAR`) equals its exact
-confirmation string - never loosen this to a single condition. Trading needs
-the `SHIOAJI_API_KEY_all`/`SHIOAJI_SECRET_KEY_all` key pair (full permission),
-not the data-only pair `realtime_quote.py`/`build_dashboard_live.py` use -
-`place_order` rejects the data-only key with a 401 even in simulation. A
-fresh Shioaji account also needs one-time CA/trading-agreement activation
-(`activate_ca()` or done on the broker's own platform) before any order
-succeeds - a `406 Please sign <account> first` means that step is still
-outstanding on the account, not a code bug; never attempt to handle a
-user's CA certificate or password yourself. `ma_data.py` resamples
-Shioaji's minute-bar `kbars()` to daily closes itself - there is no native
-daily-OHLC mode for stocks in this API.
-
-**`trading/daytrade/` is a second, independent strategy (ORB day-trade) - own config, own
-position pool, own minute-K-driven data layer, but it reuses `trading/executor.py` and
-`trading/positions.py` directly rather than duplicating them.** Because it's meant to
-re-run every 1 minute during the session, every signal input comes from `api.kbars()` for
-TODAY only (`trading/daytrade/minute_data.py`) - opening-range high, minute-level volume
-ratio, cumulative turnover - never from `api.snapshots()`, whose `volume_ratio`/
-`total_amount` are day-over-day figures, not minute-level ones; recomputing fresh from
-today's bars every run also means there's no cross-run state file to maintain for the
-opening range itself (unlike `positions_state.json`, which must persist since positions
-genuinely span runs). `trading/daytrade/backtest.py` replays the exact same
-`minute_data.py`/`signals.py` functions against historical kbars (growing per-minute slice,
-no look-ahead) instead of duplicating the entry/exit logic. Candidates come from
-`trading/daytrade/watchlist.py` - the whole market's (not `concept_map`'s) prior-day
-liquidity+volatility, scored and cached once pre-market by `build_watchlist.py` (scanning
-~2000 stocks takes ~10-12 min, far too slow for the 1-minute `daytrade_monitor.py` cadence)
-- a 2026-10 backtest traced most losing trades back to thin, low-volatility `concept_map`
-stocks that cleared the ORB conditions on noise, which is why the universe isn't
-`concept_map` here like the swing strategy. `backtest.py` rebuilds each simulated day's
-watchlist from only STRICTLY EARLIER bars (no look-ahead at the stock-selection level,
-not just the minute-by-minute replay level). See `trading/daytrade/README.md` for the
-full rule set.
-
-**Day-trade supports both long and short (`--signal reversal_both`) via 資券當沖, not just
-long.** `trading/executor.py`'s `short_sell()`/`cover_buy()` open with `StockOrderCond.
-ShortSelling` and close with `StockOrderCond.MarginTrading` - the user-specified mechanism
-(open via 融券, close via 融資), not something to "simplify" back to plain Cash orders.
-`trading/positions.py`'s `open_position()`/`close_position()` and `trading/daytrade/
-signals.py`'s `check_exit()` both take a `side` ("long"/"short") that flips which price
-direction is a win - never assume `unrealized_return`/`realized_return` means "price went
-up" without checking `side` first. A short needs a separate 信用交易帳戶 (margin account)
-from 現股當沖's - another broker-side approval this code can't satisfy. `trading/daytrade/
-patterns.py`'s `is_shooting_star()`/`is_bearish_engulfing()` are the bearish mirrors of the
-long-side hammer/engulfing patterns.
-
-**`trading/daytrade/news_api.py` is the programmatic (API-based) news-selection track**,
-confirmed against cnyes (鉅亨網)'s free, keyless `tw_stock_news` category endpoint - it
-genuinely supports historical `startAt`/`endAt` date-range queries and per-article stock-
-code tags (unlike TWSE's own `/opendata/t187ap04_L` material-announcements endpoint, which
-only ever returns the current day's batch, no date param - confirmed by direct testing,
-2026-10). Ranks candidates by raw mention-count in the window, which skews toward mega-caps
-(2330 etc.) that get name-dropped in nearly every market-commentary piece regardless of a
-real same-day catalyst - a known bias, not yet corrected. `news_watchlist.py` is the parallel
-manual-WebSearch track (today, a Claude-session-driven step); both write the same cache
-shape so `daytrade_monitor.py --source news` doesn't care which track populated it.
-
-**`--source ai_chain` (`trading/daytrade/ai_chain_watchlist.py`) trades at most ONE stock
-per day, not a list.** Pipeline: `concept_map`'s `AI伺服器` members (9 stocks, not expanded
-to adjacent AI-chain themes like ABF/PCB/封測) -> filter to yesterday's trading value >=
-`config.AI_CHAIN_MIN_VOLUME_NTD` -> among survivors, whichever has the most cnyes
-`tw_stock_news` mentions in `news_api.trading_day_window()` wins; falls back to highest
-volume if nothing shows up in the news at all. Cheap enough (9 stocks + 1 news call) that
-`daytrade_monitor.py` computes it inline on a cache miss rather than needing a separate
-pre-market script like `build_watchlist.py`.
-
-**`trading/decisions.json` is the strategy rulebook's single source of truth, rendered by
-the dashboard's 交易決策 tab - not just the swing strategy's.** `{"strategies": {id:
-{name, status, schedule, decided_date}}, "decisions": [{strategy, category, title, rule,
-rationale, decided_date}]}`; `category` is one of `entry`/`exit`/`sizing`/`ranking`. Both
-`build_dashboard.py` and `build_dashboard_live.py` load it via their own `load_decisions()`
-and embed it as `data["decisions"]` alongside the bubble-chart data; `dashboard.html.
-template`'s JS renders it read-only (no write-back to the file from the browser). Any new
-trading-strategy decision (a new condition, a changed threshold, a new strategy like the
-`daytrade` one) should be appended here, not just left in conversation history or
-`trading/README.md` prose - this file is what makes past decisions (and why they were made)
-visible on the dashboard instead of needing to be re-derived from chat/git history.
+**`trading/decisions.json` is the strategy rulebook's single source of truth**, rendered
+read-only by the dashboard's 交易決策 tab (not just the swing strategy's). Any new
+trading-strategy decision should be appended here, not left only in conversation/git
+history — it's what makes past decisions (and why) visible without re-deriving from chat.
 
 ## File structure
 
 - `fetch_daily.py` — daily orchestrator; also calls `db.ensure_views()`
-- `datasets.py` — endpoint registry (url, table, date handling, key columns, TPEx
-  field-remap maps) for both markets, except the T86 special case which lives directly in
-  `twse_client.py`
-- `twse_client.py` — HTTP layer: response-shape normalization, comma-stripping, T86 fetch,
-  TPEx field remap helpers (`remap_full`/`remap_partial`)
-- `db.py` — generic upsert (dynamic TEXT-typed table creation) + `industry_map` view
+- `datasets.py` — endpoint registry for both markets (T86 lives in `twse_client.py`)
+- `twse_client.py` — HTTP layer: response normalization, comma-stripping, T86 fetch, remap helpers
+- `db.py` — generic upsert + `industry_map` view
 - `utils.py` — ROC-date conversion, date helpers
-- `industry_report.py` — 4 reports grouped by official `industry_map`
-- `concept_report.py` — ranks `concept_map` themes by average %change (computed from raw
-  point `Change`, since TWSE doesn't provide percentage directly)
-- `margin_report.py` — market-wide leverage + bull/bear positioning from `margin_trading`
-  for the dashboard's 融資融券 tab (see Architecture above)
-- `stock_profile.py` — per-company fundamentals profile (financials, dividends, revenue,
-  EPS, PE, calendar, price range) for the dashboard's 個股基本面 tab (see Architecture above)
-- `stock_lookup.py` — shared lookup/validation/enrichment (see Architecture above)
+- `industry_report.py` / `concept_report.py` / `margin_report.py` / `stock_profile.py` —
+  the four standalone report/profile builders (see Architecture above)
+- `stock_lookup.py` — shared lookup/validation/enrichment
 - `concept_map.py` — CRUD for the hand-curated `concept_map` table
-- `shioaji_test.py` — first-contact Shioaji connectivity test, dumps raw responses
-- `realtime_quote.py` — intraday quotes via Shioaji; query-only (see Architecture above)
-- `market_movers.py` — whole-market %change ranking from twstock.db (not limited to
-  concept_map's tracked stocks) with industry/concept classification, plus a day-over-day
-  industry-representation trend view
-- `dashboard.html.template` — bubble-chart dashboard shell + 交易決策 (decisions log) +
-  均線總覽 (MA5/10/20 table) + 融資融券 (leverage/bull-bear) + 個股基本面 (per-company
-  fundamentals, search-driven) tabs; `__DATA_JSON__` is the data injection point, never
-  edit the built `dashboard.html` directly
-- `build_dashboard.py` / `build_dashboard_live.py` — fill the template from twstock.db
-  (EOD) or Shioaji (intraday) respectively, both producing `dashboard.html` (gitignored
-  build output). `build_dashboard_live.py` also writes `dashboard_push.json` (gitignored)
-  - the raw data dict, for the Artifact `db`-push path (see below).
-- `build_ma_cache.py` — pre-computes MA5/10/20 for every `concept_map` stock into
-  `ma_cache.json` (gitignored), for the 均線總覽 tab. Runs on its own, slower, once-a-day
-  schedule (not every dashboard refresh) because MA needs Shioaji's per-stock `kbars()` -
-  not batchable like `snapshots()` - which takes a few minutes across ~180 stocks, far too
-  slow for the live dashboard's 1-minute cadence. `build_dashboard_live.py` just reads
-  whatever's in the cache and overlays the current run's live price; `build_dashboard.py`
-  (EOD, no live price available) always ships an empty 均線總覽 table.
-- `build_stock_profiles_cache.py` — pre-computes every company's fundamentals profile
-  (see `stock_profile.py` above) into `stock_profiles_cache.json` (gitignored), for the
-  個股基本面 tab. Same once-a-day caching pattern as `build_ma_cache.py`, but for a
-  different reason - no Shioaji dependency here, just ~15-20s of plain SQL across ~2000
-  companies, still too slow for the live dashboard's 1-minute cadence. Both
-  `build_dashboard.py` and `build_dashboard_live.py` read this cache the same way (unlike
-  `ma_table`, this data doesn't differ between the EOD and live builds either).
-- `refresh_dashboard.bat` — entry point for the `TWDashboardLiveRefresh` Windows
-  scheduled task (every 1 min); cds into the project dir and runs
-  `build_dashboard_live.py`
-- `trading/` — isolated swing-trading module (config/signals/positions/executor/
-  daily_scan/intraday_monitor/report); see Architecture above and `trading/README.md`
-- `volume_alert.py` — Windows toast alerts on Shioaji's `volume_ratio` (量比), called from
-  `build_dashboard_live.py` every run. Once-per-trading-day per stock
-  (`volume_alert_state.json`, gitignored, resets on date change) and the child
-  `powershell.exe` call is launched with `creationflags=subprocess.CREATE_NO_WINDOW` and
-  the temp `.ps1` is written `utf-8-sig` (not `utf-8`) - both were real bugs found by
-  testing (a visible console flash per alert, and garbled Chinese toast text from Windows
-  PowerShell 5.1 reading a BOM-less script in the system codepage instead of UTF-8) -
-  don't revert either "fix" while refactoring. **Never test this against the full
-  ~2000-stock universe with a near-zero threshold** - it previously queued ~140 toasts
-  in under two minutes before the run could be stopped; verify with a direct
-  `volume_alert.send_toast(...)` call instead.
+- `shioaji_test.py` — first-contact Shioaji connectivity test
+- `realtime_quote.py` — intraday quotes via Shioaji, query-only
+- `market_movers.py` — whole-market %change ranking + industry-representation trend
+- `dashboard.html.template` — 題材雷達/交易決策/均線總覽/融資融券/個股基本面 tabs;
+  `__DATA_JSON__` is the data injection point — never edit built `dashboard.html` directly
+- `build_dashboard.py` / `build_dashboard_live.py` — fill the template from twstock.db (EOD)
+  or Shioaji (intraday), both producing `dashboard.html`; the live build also writes
+  `dashboard_push.json` for the Artifact `db`-push path
+- `build_ma_cache.py` — pre-computes MA5/10/20 for `concept_map` stocks into `ma_cache.json`
+  (gitignored, once-a-day — Shioaji `kbars()` isn't batchable, takes minutes for ~180 stocks)
+- `build_stock_profiles_cache.py` — pre-computes all companies' profiles into
+  `stock_profiles_cache.json` (gitignored, once-a-day, ~15-20s pure SQL)
+- `refresh_dashboard.bat` — entry point for the `TWDashboardLiveRefresh` Windows scheduled
+  task (every 1 min)
+- `trading/` — isolated swing-trading module; see Architecture above and `trading/README.md`
+- `volume_alert.py` — Windows toast on Shioaji `volume_ratio`, once/trading-day/stock
+  (`volume_alert_state.json`); PowerShell child uses `CREATE_NO_WINDOW` + `utf-8-sig` script
+  encoding (both fixed real bugs — console flash, garbled Chinese toast text — don't revert).
+  **Never test against the full ~2000-stock universe with a near-zero threshold** — queues
+  one toast per stock; verify with a direct `volume_alert.send_toast(...)` call instead.
 
-**Two separate auto-refresh mechanisms exist for the dashboard - don't conflate them.**
-
-1. **Pure-local (currently active):** Windows Task Scheduler job `TWDashboardLiveRefresh`
-   runs `refresh_dashboard.bat` -> `build_dashboard_live.py` every minute, rewriting
-   `dashboard.html` on disk. The template's own JS (`RELOAD_SECONDS`, a `setInterval`
-   countdown ending in `location.reload()`) reloads the open browser tab in step, so the
-   viewer sees fresh data with **zero Claude session involvement** once set up - this is
-   the user's explicit choice after asking whether local-machine resources could replace
-   the agent-driven loop. The tradeoff they accepted: viewing is local-file-only (no
-   claude.ai link to share/view elsewhere). Check/stop it with
-   `Get-ScheduledTaskInfo -TaskName "TWDashboardLiveRefresh"` /
-   `Unregister-ScheduledTask -TaskName "TWDashboardLiveRefresh"`.
-2. **Artifact `db` capability (built, available, not the active mechanism):** the
-   published Artifact declares `capabilities: {db: {}}` and its page subscribes to
-   `dashboard/latest`'s `onSnapshot`, re-rendering on push with no reload. But a browser
-   can't reach Shioaji directly (CSP; Shioaji isn't a browser protocol anyway), and
-   `write_db` is only callable through the Artifact tool - so keeping this path "live"
-   requires a Claude-session-side loop (`ScheduleWakeup`, 60s floor) that runs until
-   explicitly stopped. The user tried this first, asked about the resource cost, then
-   asked whether local resources could do it instead - hence mechanism 1. Don't re-offer
-   the session loop as the default; it's the fallback for when a shareable/cross-device
-   link matters more than zero Claude usage.
-
-`build_dashboard_live.py` always writes both `dashboard.html` (full page, for mechanism 1
-or a one-off republish) and `dashboard_push.json` (the bare data dict, for mechanism 2's
-`write_db` push) - one run serves either path.
+**Two separate dashboard auto-refresh mechanisms — don't conflate them.**
+1. **Pure-local (active):** `TWDashboardLiveRefresh` task runs `build_dashboard_live.py`
+   every minute, rewriting `dashboard.html` on disk; the page's own `RELOAD_SECONDS`
+   countdown does `location.reload()` to pick it up — zero Claude involvement once set up,
+   but viewing is local-file-only. Active/selected-stock tab state is preserved across that
+   reload via `localStorage` (`twDashboardActivePage`/`twDashboardActiveProfileCode`) — a
+   reload no longer bounces the viewer back to 題材雷達.
+2. **Artifact `db` push (built, not active):** the Artifact subscribes to `dashboard/latest`
+   via `onSnapshot`, but a browser can't reach Shioaji and `write_db` is Claude-tool-only, so
+   keeping it live needs a session-side `ScheduleWakeup` loop. Don't re-offer this as the
+   default; it's the fallback when a shareable link matters more than zero Claude usage.

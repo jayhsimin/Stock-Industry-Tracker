@@ -69,6 +69,10 @@ schtasks /create /tn "TWStockDaily" /tr "python C:\Users\z2012\Desktop\S_N\fetch
 | `dividend` | 股利分派情形（目前只有上市，上櫃的欄位格式不同還沒接）| 不定期公告 |
 | `income_statement_{ci,fh,bd,ins,mim,basi}` | 綜合損益表，依產業（一般業/金控/證期/保險/異業/金融）分表，上市+上櫃合併 | 每季 |
 | `balance_sheet_{ci,fh,bd,ins,mim,basi}` | 資產負債表，依產業分表，上市+上櫃合併 | 每季 |
+| `warrant_info` / `warrant_trading` | 權證基本資料／成交資訊，上市+上櫃合併 | 不常變／每日 |
+| `shareholder_meetings` | 股東常會/臨時會開會日期、地點、是否電子投票，上市+上櫃合併 | 不定期公告 |
+| `ex_dividend_schedule` | 除權除息**近期預告**（滾動窗口，不是歷史），上市+上櫃合併 | 每日 |
+| `annual_trading_stats` / `monthly_trading_stats` | 個股年度/月度最高最低價（單一期間快照，非多年歷史），**僅上市** | 每日 |
 
 欄位名稱直接沿用證交所原始欄位（中文），存成 TEXT，方便日後知道欄位確切意義；做數值運算時用
 `CAST(欄位 AS REAL)` 或 `CAST(欄位 AS INTEGER)` 轉型。
@@ -167,9 +171,9 @@ python market_movers.py --days 5 --top 30                       # 近N個交易�
 `scanners()`（內建漲跌幅排行榜）來做，但實測結果偏向極低成交量的股票卡在剛好±10%，資料不乾淨，
 改用我們自己完整的 TWSE/TPEx 收盤資料更可靠。
 
-**`--days` 的趨勢追蹤目前參考價值有限**，因為 `twstock.db` 還只累積了兩天資料（還沒設排程每天自動跑）——
-要看出「某題材連續好幾天在排行榜出現次數增加=發酵」「出現次數減少=退燒」這種趨勢，需要每天執行
-`fetch_daily.py` 累積歷史，建議現在就排程起來（見下面「排程」那節）。
+**`--days` 的趨勢追蹤準確度取決於 `fetch_daily.py` 有沒有真的每天排程執行**——要看出「某題材連續好幾天
+在排行榜出現次數增加=發酵」「出現次數減少=退燒」這種趨勢，需要連續的每日資料，沒排程的話只會看到
+零星幾天，見下面「排程」那節。
 
 ## 盤中即時報價（永豐金 Shioaji）
 
@@ -185,10 +189,18 @@ python realtime_quote.py --concept "AI伺服器"      # 盤中即時報價，依
 python realtime_quote.py --industry "半導體業" --live   # --live 用真帳戶，預設是模擬模式（報價一樣是真的，只有下單是模擬）
 ```
 
-## 泡泡圖儀表板（題材雷達）
+## 儀表板（題材雷達 + 4 個附屬分頁）
 
-`dashboard.html.template` + `build_dashboard.py`/`build_dashboard_live.py` 產生一個可互動的泡泡圖
-Artifact：泡泡大小 = 漲跌幅度，紅漲綠跌，可切「官方產業」/「自建題材」，點泡泡看該分類完整個股清單。
+`dashboard.html.template` + `build_dashboard.py`/`build_dashboard_live.py` 產生一個可互動的
+Artifact，共 5 個分頁：
+
+| 分頁 | 內容 |
+|---|---|
+| **題材雷達** | 泡泡圖，大小=漲跌幅度（紅漲綠跌），可切「官方產業」/「自建題材」，點泡泡看完整個股清單 |
+| **交易決策** | `trading/decisions.json` 的策略規則/歷史決策，唯讀展示 |
+| **均線總覽** | `concept_map` 個股的 MA5/10/20/60，來自 `build_ma_cache.py`（每天跑一次） |
+| **融資融券** | 全市場融資融券排行、資券比、產業/題材資券傾向 |
+| **個股基本面** | 搜尋任一檔股票（上市+上櫃全市場）查財報/股利/營收/EPS/本益比/股東會除權息行事曆/歷史價格區間，並先顯示該股融資融券狀況（含估計斷頭距離，見下） |
 
 ```bash
 python build_dashboard.py                  # 用 twstock.db 的收盤資料（每日快照）
@@ -198,6 +210,23 @@ python build_dashboard_live.py             # 用 Shioaji 盤中即時報價（�
 兩者都輸出 `dashboard.html`（已加進 `.gitignore`，是產生物不是原始碼），把這個檔案發布成 Artifact 即可。
 `dashboard.html.template` 裡的 `__DATA_JSON__` 是資料注入點，不要直接編輯 `dashboard.html`——改
 `.template` 再重新產生。
+
+**均線總覽/個股基本面需要額外的快取**，每天跑一次（跟 `fetch_daily.py` 一樣排程）：
+
+```bash
+python build_ma_cache.py                    # MA5/10/20/60 → ma_cache.json（需要 Shioaji 帳號）
+python build_stock_profiles_cache.py        # 全市場基本面 → stock_profiles_cache.json（純 SQL，不需要 Shioaji）
+```
+
+沒跑過這兩個指令的話，對應分頁會顯示「尚無資料，請先執行...」而不是空白或報錯。
+
+**融資融券分頁 + 個股基本面的斷頭距離是概算，不是精確維持率**：`margin_trading` 只有逐股的融資/融券
+餘額（張），沒有個別部位的進場成本，所以「距斷頭還差幾%」是拿 `monthly_trading_stats` 的本月加權均價
+當成本基準、融資跌 22%／融券漲 46%（使用者自訂的概略經驗值，不是官方公布的真實融資成數/融券保證金成數）
+去估算，畫面上都有標註這是估計值。
+
+本機自動刷新每分鐘會整頁重新整理（見下方「自動刷新」），重新整理前「正在看哪個分頁／個股基本面查的是
+哪一檔」會存進瀏覽器 `localStorage`，重新整理後自動恢復，不會跳回題材雷達分頁。
 
 ### 自動刷新 — 兩種做法
 
@@ -259,10 +288,15 @@ Windows 悄悄擋掉不顯示），且會強制不開子視窗（`CREATE_NO_WIND
 
 ## 交易策略（獨立模組，目前只能模擬單）
 
-`trading/` 是跟上面資料管線完全隔離的另一個模組：題材回檔量增策略（進場＝題材發酵+回檔支撐+量增同時
-成立；出場＝停損/停利/持有超過一週/題材轉弱任一觸發），用 Shioaji 整股模擬下單，持倉總成本上限
-NT$600,000。**在使用者明確用兩個獨立條件確認之前，永遠不會變成真單**——規則、風控、安全閘門細節都在
-[`trading/README.md`](trading/README.md)，不重複寫在這裡。
+`trading/` 是跟上面資料管線完全隔離的模組，目前有兩個獨立策略：
+
+- **波段題材回檔量增策略**（進場＝題材發酵+回檔支撐+量增同時成立；出場＝停損/停利/持有超過一週/題材
+  轉弱任一觸發），持倉總成本上限 NT$600,000。規則/風控見 [`trading/README.md`](trading/README.md)。
+- **當沖 ORB 策略**（`trading/daytrade/`，開盤區間突破，支援資券當沖做多做空），候選股來自全市場流動性/
+  波動度篩選（不是 `concept_map`）。規則見 [`trading/daytrade/README.md`](trading/daytrade/README.md)。
+
+兩者都用 Shioaji 模擬下單。**在使用者明確用兩個獨立條件（`--live` 旗標 + 環境變數確認字串）確認之前，
+永遠不會變成真單**——這條防呆規則細節不重複寫在這裡，見各自的 README。
 
 ## 檔案結構
 
@@ -272,19 +306,25 @@ NT$600,000。**在使用者明確用兩個獨立條件確認之前，永遠不�
 - `db.py` — SQLite 通用 upsert 邏輯（含自動 `ALTER TABLE` 新增欄位，讓上市/上櫃資料能合併進同一張表）+ `industry_map` view
 - `utils.py` — 民國年轉西元年等小工具
 - `industry_report.py` — 依產業分類的四張現成報表
+- `concept_report.py` — 依自建題材排名當日平均漲跌幅
+- `margin_report.py` — 全市場融資融券排行/資券比，見「儀表板」一節
+- `stock_profile.py` — 單一個股完整基本面資料，見「儀表板」一節
 - `stock_lookup.py` — 驗證候選股票代號/名稱/產業/題材是否存在 + 抓當日動能
 - `concept_map.py` — 自建題材/概念股對照表（管理 concept_map 表）
 - `shioaji_test.py` — Shioaji API 第一次連線測試，印出原始回應內容
 - `realtime_quote.py` — 盤中即時報價（Shioaji），沿用 stock_lookup.py 的選股邏輯，純查詢不下單
 - `utils.load_env()` — 極簡 .env 讀取（沒有額外依賴 python-dotenv）
-- `dashboard.html.template` — 泡泡圖儀表板的 HTML/CSS/JS 樣板（`__DATA_JSON__` 是資料注入點）
+- `dashboard.html.template` — 儀表板的 HTML/CSS/JS 樣板，5個分頁（`__DATA_JSON__` 是資料注入點）
 - `build_dashboard.py` / `build_dashboard_live.py` — 把 twstock.db（收盤）或 Shioaji（即時）資料
   灌進樣板，產生 `dashboard.html`（產生物，已 gitignore）
+- `build_ma_cache.py` / `build_stock_profiles_cache.py` — 均線總覽/個股基本面分頁的每日快取，見「儀表板」一節
 - `refresh_dashboard.bat` — Windows 工作排程器呼叫的進入點，cd 進專案目錄後跑
   `build_dashboard_live.py`（排程本身用 `Register-ScheduledTask` 設定，工作名稱
   `TWDashboardLiveRefresh`，每分鐘跑一次）
 - `market_movers.py` — 全市場（不限已分類股票）漲跌幅排行 + 產業分布，過濾掉權證/ETF
 - `volume_alert.py` — 成交量異常（量比）Windows 通知，見上面「成交量異常警示」一節
+- `trading/` — 波段策略（獨立模組，見上面「交易策略」一節）
+- `trading/daytrade/` — 當沖 ORB 策略（獨立模組，同上）
 
 ## 環境需求
 
